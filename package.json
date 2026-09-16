@@ -1,0 +1,20 @@
+{
+  "name": "operation-fwcpl",
+  "version": "1.0.0",
+  "description": "Branch & Operations Management System for FWCPL (20+ Branches)",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\"",
+    "install:all": "npm install && npm install --prefix backend && npm install --prefix frontend",
+    "build": "npm run build --prefix backend && npm run build --prefix frontend",
+    "start": "npm run start --prefix backend",
+    "seed": "npm run seed --prefix backend",
+    "test:acceptance": "npm run test:acceptance --prefix backend",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

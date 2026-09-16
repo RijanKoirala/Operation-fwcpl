@@ -1,0 +1,75 @@
+services:
+  # PostgreSQL 16 Database
+  db:
+    image: postgres:16-alpine
+    container_name: fwcpl-db
+    restart: always
+    environment:
+      POSTGRES_USER: ${DB_USER:-fwcpl_admin}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-SecureP@ssw0rd2026!}
+      POSTGRES_DB: ${DB_NAME:-fwcpl_operations}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./backend/src/models/schema.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-fwcpl_admin} -d ${DB_NAME:-fwcpl_operations}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Backend Node.js Express API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: fwcpl-backend
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-fwcpl_operations}
+      DB_USER: ${DB_USER:-fwcpl_admin}
+      DB_PASSWORD: ${DB_PASSWORD:-SecureP@ssw0rd2026!}
+      DATABASE_URL: postgresql://${DB_USER:-fwcpl_admin}:${DB_PASSWORD:-SecureP@ssw0rd2026!}@db:5432/${DB_NAME:-fwcpl_operations}
+      JWT_SECRET: ${JWT_SECRET:-fiber-world-production-jwt-super-secret-key-2026}
+      JWT_EXPIRES_IN: 7d
+      # Email / SMTP Configuration (Sender: software@fiberworld.net.np)
+      SMTP_HOST: ${SMTP_HOST:-webmail.fiberworld.net.np}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_SECURE: ${SMTP_SECURE:-true}
+      SMTP_USER: ${SMTP_USER:-software@fiberworld.net.np}
+      SMTP_PASS: ${SMTP_PASS:-Nepal@123}
+      EMAIL_FROM: ${EMAIL_FROM:-software@fiberworld.net.np}
+      OPERATION_ALERT_EMAIL: ${OPERATION_ALERT_EMAIL:-operation@fiberworld.net.np}
+      NOC_ALERT_EMAIL: ${NOC_ALERT_EMAIL:-noc@fiberworld.net.np}
+      PORTAL_BASE_URL: ${PORTAL_BASE_URL:-http://103.166.172.36}
+    ports:
+      - "5000:5000"
+    volumes:
+      - uploads_data:/app/uploads
+      - sqlite_data:/app/data
+
+  # Frontend Nginx Web Application
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: fwcpl-frontend
+    restart: always
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+      - "3000:80"
+
+volumes:
+  pgdata:
+  uploads_data:
+  sqlite_data:
