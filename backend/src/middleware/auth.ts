@@ -107,7 +107,7 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
             `SELECT p.permission_key, rp.allowed
              FROM role_permissions rp
              JOIN permissions p ON rp.permission_id = p.id
-             WHERE rp.role_id = $1 AND (rp.allowed = TRUE OR rp.allowed = 1)`,
+             WHERE rp.role_id = $1 AND rp.allowed = TRUE`,
             [userRow.role_id]
           );
           for (const row of rpRes.rows) {

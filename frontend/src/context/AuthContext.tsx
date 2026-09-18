@@ -88,6 +88,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const savedToken = getAuthToken();
     if (savedToken) {
       refreshUser();
+      // Safety fallback: Never keep user stuck on loading spinner for more than 4 seconds
+      const timer = setTimeout(() => {
+        setIsLoading(false);
+      }, 4000);
+      return () => clearTimeout(timer);
     } else {
       setIsLoading(false);
     }

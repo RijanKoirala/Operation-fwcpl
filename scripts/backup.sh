@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # Fiber World Communication Pvt. Ltd. (FWCPL)
-# Resilient Multi-Engine Server Backup Script
-# Supports: PostgreSQL + SQLite Fallback + Uploaded Files + Environment Config
+# Production Enterprise PostgreSQL Server Backup Script
+# Backs Up: PostgreSQL Database + Uploaded Files + Environment Config
 # ==============================================================================
 
 # 1. Determine directories
@@ -65,7 +65,7 @@ if docker compose ps --services --filter "status=running" 2>/dev/null | grep -q 
 
     if [ -n "$TARGET_DB" ]; then
         echo "  Dumping PostgreSQL database '${TARGET_DB}'..."
-        if $EXEC_CMD pg_dump -U "$DB_USER" -d "$TARGET_DB" 2>/dev/null | gzip > "$PG_DUMP_FILE"; then
+        if $EXEC_CMD pg_dump -U "$DB_USER" --clean --if-exists -d "$TARGET_DB" 2>/dev/null | gzip > "$PG_DUMP_FILE"; then
             if [ -s "$PG_DUMP_FILE" ] && [ $(wc -c < "$PG_DUMP_FILE") -gt 200 ]; then
                 echo "  ✔ PostgreSQL database ('$TARGET_DB') dumped successfully ($(du -h "$PG_DUMP_FILE" | cut -f1))"
                 BACKUP_ITEMS+=("PostgreSQL: $TARGET_DB")
@@ -77,47 +77,12 @@ if docker compose ps --services --filter "status=running" 2>/dev/null | grep -q 
     fi
 
     if [ "$PG_BACKED_UP" = false ]; then
-        echo "  ℹ PostgreSQL database '$DB_NAME' does not exist in container (Databases present: $(echo $EXISTING_DBS | tr '\n' ' '))."
-        echo "  ℹ Note: The backend automatically operates on SQLite when PostgreSQL DB is absent."
+        echo "  ❌ Error: PostgreSQL database '$DB_NAME' could not be dumped."
+        exit 1
     fi
 else
-    echo "  ℹ PostgreSQL container is not currently running."
-fi
-
-# ==============================================================================
-# 4. BACKUP SQLITE DATABASE (Active persistent store)
-# ==============================================================================
-echo "💾 2/4 Checking SQLite Database..."
-SQLITE_DUMP_FILE="$TEMP_DIR/sqlite_fwcpl.db.gz"
-SQLITE_BACKED_UP=false
-
-# 4a. Check inside backend container (/app/data/fwcpl.sqlite)
-if docker compose ps --services --filter "status=running" 2>/dev/null | grep -q "backend" || docker ps --format '{{.Names}}' | grep -q "fwcpl-backend"; then
-    BACKEND_CMD="docker compose exec -T backend"
-    if ! docker compose ps --services --filter "status=running" 2>/dev/null | grep -q "backend"; then
-        BACKEND_CMD="docker exec -i fwcpl-backend"
-    fi
-
-    $BACKEND_CMD cat /app/data/fwcpl.sqlite 2>/dev/null | gzip > "$SQLITE_DUMP_FILE" || true
-    if [ -s "$SQLITE_DUMP_FILE" ] && [ $(wc -c < "$SQLITE_DUMP_FILE") -gt 500 ]; then
-        echo "  ✔ Active SQLite database backed up from container ($(du -h "$SQLITE_DUMP_FILE" | cut -f1))"
-        BACKUP_ITEMS+=("SQLite: /app/data/fwcpl.sqlite")
-        SQLITE_BACKED_UP=true
-    else
-        rm -f "$SQLITE_DUMP_FILE"
-    fi
-fi
-
-# 4b. Check host local backend/data directory
-if [ "$SQLITE_BACKED_UP" = false ] && [ -f "$PROJECT_DIR/backend/data/fwcpl.sqlite" ]; then
-    gzip -c "$PROJECT_DIR/backend/data/fwcpl.sqlite" > "$SQLITE_DUMP_FILE"
-    echo "  ✔ Local SQLite database backed up from backend/data ($(du -h "$SQLITE_DUMP_FILE" | cut -f1))"
-    BACKUP_ITEMS+=("SQLite: host backend/data")
-    SQLITE_BACKED_UP=true
-fi
-
-if [ "$SQLITE_BACKED_UP" = false ] && [ "$PG_BACKED_UP" = false ]; then
-    echo "  ⚠️ Warning: No active database found in PostgreSQL or SQLite."
+    echo "  ❌ Error: PostgreSQL container is not currently running."
+    exit 1
 fi
 
 # ==============================================================================
@@ -175,10 +140,10 @@ cat << METADATA > "$TEMP_DIR/metadata.json"
   "timestamp": "${TIMESTAMP}",
   "created_at": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
   "project": "FWCPL Operations Management",
+  "database_type": "PostgreSQL",
   "database_name": "${DB_NAME}",
   "database_user": "${DB_USER}",
   "postgresql_backed_up": ${PG_BACKED_UP},
-  "sqlite_backed_up": ${SQLITE_BACKED_UP},
   "uploads_backed_up": ${UPLOADS_BACKED_UP},
   "retention_days": ${RETENTION_DAYS}
 }

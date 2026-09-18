@@ -1,4 +1,4 @@
-import Database from 'better-sqlite3';
+import bcrypt from 'bcryptjs';
 import { Pool } from 'pg';
 import path from 'path';
 import fs from 'fs';
@@ -108,18 +108,33 @@ export const cleanDemoData = async () => {
       const deptRes = await queryFn(`SELECT id FROM departments WHERE UPPER(code) = 'OPERATION' OR UPPER(name) = 'OPERATION' LIMIT 1`);
       const operationDeptId = deptRes.rows?.[0]?.id || null;
 
-      await queryFn(
+      const saltRounds = 10;
+      const hash = await bcrypt.hash('Nepal@123', saltRounds);
+
+      const updRes = await queryFn(
         `UPDATE users 
          SET branch_id = NULL, 
              status = 'Active', 
              role = 'SUPER_ADMIN', 
              allowed_branches = 'ALL',
-             role_id = COALESCE($1, role_id),
-             department_id = COALESCE($2, department_id)
+             password_hash = $1,
+             role_id = COALESCE($2, role_id),
+             department_id = COALESCE($3, department_id)
          WHERE LOWER(username) = 'superadmin' OR UPPER(role) = 'SUPER_ADMIN'`,
-        [superAdminRoleId, operationDeptId]
+        [hash, superAdminRoleId, operationDeptId]
       );
-      console.log('  ✔ Verified: Super Admin account status set to Active, branch_id cleared, allowed_branches set to ALL.');
+
+      if ((updRes?.rowCount ?? 0) === 0) {
+        await queryFn(
+          `INSERT INTO users (employee_id, username, email, password_hash, full_name, role, role_id, department_id, status, allowed_branches)
+           VALUES ('EMP-1001', 'superadmin', 'admin@fiberworld.net.np', $1, 'Rijan Koirala', 'SUPER_ADMIN', $2, $3, 'Active', 'ALL')
+           ON CONFLICT (username) DO UPDATE SET password_hash = $1, status = 'Active', role = 'SUPER_ADMIN'`,
+          [hash, superAdminRoleId, operationDeptId]
+        );
+        console.log('  ✔ Fresh Super Admin account created in PostgreSQL (username: superadmin, password: Nepal@123).');
+      } else {
+        console.log('  ✔ Verified: Super Admin account status set to Active, password reset to Nepal@123, branch_id cleared, allowed_branches set to ALL.');
+      }
     } catch (err: any) {
       console.warn('  ⚠️ Superadmin alignment warning:', err.message);
     }
@@ -156,7 +171,7 @@ export const cleanDemoData = async () => {
     console.error('⚠️ Error during db cleanup:', err.message);
   }
 
-  // Execution: 2. Also directly clean SQLite file if present on disk
+  // Execution: 2. Remove any legacy SQLite files on disk
   const candidateSqlitePaths = [
     path.resolve(__dirname, '../../data/fwcpl.sqlite'),
     path.resolve(process.cwd(), 'data/fwcpl.sqlite'),
@@ -166,32 +181,11 @@ export const cleanDemoData = async () => {
   for (const sPath of candidateSqlitePaths) {
     if (fs.existsSync(sPath)) {
       try {
-        console.log(`\nChecking SQLite file at: ${sPath}`);
-        const sdb = new Database(sPath);
-        sdb.pragma('journal_mode = WAL');
-        sdb.pragma('foreign_keys = OFF'); // Temporarily off for bulk purge
-
-        const querySqlite = async (sql: string, params: any[] = []) => {
-          let sText = sql.replace(/\$(\d+)/g, '?');
-          const isSelect = /^\s*SELECT/i.test(sText);
-          if (isSelect) {
-            const stmt = sdb.prepare(sText);
-            const rows = stmt.all(...params);
-            return { rows, rowCount: rows.length };
-          } else {
-            const stmt = sdb.prepare(sText);
-            const info = stmt.run(...params);
-            return { rows: [], rowCount: info.changes };
-          }
-        };
-
-        await runCleanupSql(querySqlite, `Direct SQLite (${sPath})`);
-        sdb.pragma('foreign_keys = ON');
-        sdb.close();
+        fs.unlinkSync(sPath);
+        console.log(`  ✔ Removed legacy SQLite file at: ${sPath}`);
       } catch (sErr: any) {
-        console.warn(`⚠️ Error cleaning direct SQLite at ${sPath}:`, sErr.message);
+        console.warn(`  ℹ Could not remove legacy SQLite at ${sPath}:`, sErr.message);
       }
-      break;
     }
   }
 

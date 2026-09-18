@@ -63,40 +63,59 @@ if [[ "$BACKUP_FILE" == *.tar.gz ]]; then
     echo "📦 Detected unified FWCPL backup bundle. Extracting..."
     tar -xzf "$BACKUP_FILE" -C "$TEMP_EXTRACT"
 
+    # 0. Restore .env configuration if not present
+    ENV_BACKUP=$(find "$TEMP_EXTRACT" -name "env.backup" | head -n 1)
+    if [ ! -f "$PROJECT_DIR/.env" ] && [ -f "$ENV_BACKUP" ]; then
+        echo "⚙️ Restoring .env configuration from backup..."
+        cp "$ENV_BACKUP" "$PROJECT_DIR/.env"
+        chmod 600 "$PROJECT_DIR/.env"
+        # Reload env vars
+        export $(grep -v '^#' "$PROJECT_DIR/.env" | xargs -0 2>/dev/null || true)
+        echo "  ✔ .env configuration restored."
+    fi
+
     # 1. Restore PostgreSQL if dump exists
     PG_FILE=$(find "$TEMP_EXTRACT" -name "postgres_*.sql.gz" | head -n 1)
     if [ -f "$PG_FILE" ]; then
         echo "🗄️ Restoring PostgreSQL Database ('$DB_NAME')..."
+        DB_CMD="docker compose exec -T db"
+        if ! docker compose ps --services --filter "status=running" 2>/dev/null | grep -q "db"; then
+            DB_CMD="docker exec -i fwcpl-db"
+        fi
         # Ensure database exists
-        docker compose exec -T db createdb -U "$DB_USER" "$DB_NAME" 2>/dev/null || true
-        gunzip -c "$PG_FILE" | docker compose exec -T db psql -U "$DB_USER" -d "$DB_NAME"
+        $DB_CMD createdb -U "$DB_USER" "$DB_NAME" 2>/dev/null || true
+        gunzip -c "$PG_FILE" | $DB_CMD psql -U "$DB_USER" -d "$DB_NAME"
         echo "  ✔ PostgreSQL database successfully restored."
     fi
 
-    # 2. Restore SQLite if present
-    SQLITE_FILE=$(find "$TEMP_EXTRACT" -name "sqlite_*.db.gz" | head -n 1)
-    if [ -f "$SQLITE_FILE" ]; then
-        echo "💾 Restoring SQLite Database to /app/data/fwcpl.sqlite..."
-        gunzip -c "$SQLITE_FILE" | docker compose exec -T backend sh -c "cat > /app/data/fwcpl.sqlite" || true
-        echo "  ✔ SQLite database successfully restored."
-    fi
-
-    # 3. Restore Uploads
+    # 2. Restore Uploads
     UPLOADS_FILE=$(find "$TEMP_EXTRACT" -name "uploads.tar.gz" | head -n 1)
     if [ -f "$UPLOADS_FILE" ]; then
         echo "📁 Restoring Uploaded Files to /app..."
-        docker compose exec -T backend tar -xzf - -C /app < "$UPLOADS_FILE" || true
+        BACKEND_CMD="docker compose exec -T backend"
+        if ! docker compose ps --services --filter "status=running" 2>/dev/null | grep -q "backend"; then
+            BACKEND_CMD="docker exec -i fwcpl-backend"
+        fi
+        $BACKEND_CMD tar -xzf - -C /app < "$UPLOADS_FILE" || true
         echo "  ✔ Uploaded files successfully restored."
     fi
 
 elif [[ "$BACKUP_FILE" == *.sql.gz ]]; then
     echo "🗄️ Restoring single PostgreSQL gzip dump into '$DB_NAME'..."
-    gunzip -c "$BACKUP_FILE" | docker compose exec -T db psql -U "$DB_USER" -d "$DB_NAME"
+    DB_CMD="docker compose exec -T db"
+    if ! docker compose ps --services --filter "status=running" 2>/dev/null | grep -q "db"; then
+        DB_CMD="docker exec -i fwcpl-db"
+    fi
+    gunzip -c "$BACKUP_FILE" | $DB_CMD psql -U "$DB_USER" -d "$DB_NAME"
     echo "  ✔ PostgreSQL database successfully restored."
 
 elif [[ "$BACKUP_FILE" == *.sql ]]; then
     echo "🗄️ Restoring single plain PostgreSQL SQL dump into '$DB_NAME'..."
-    docker compose exec -T db psql -U "$DB_USER" -d "$DB_NAME" < "$BACKUP_FILE"
+    DB_CMD="docker compose exec -T db"
+    if ! docker compose ps --services --filter "status=running" 2>/dev/null | grep -q "db"; then
+        DB_CMD="docker exec -i fwcpl-db"
+    fi
+    $DB_CMD psql -U "$DB_USER" -d "$DB_NAME" < "$BACKUP_FILE"
     echo "  ✔ PostgreSQL database successfully restored."
 
 else

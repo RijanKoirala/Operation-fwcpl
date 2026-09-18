@@ -1,3 +1,4 @@
+import bcrypt from 'bcryptjs';
 import { db } from '../models/database';
 
 export interface PermissionDefinition {
@@ -334,6 +335,134 @@ export const seedRbacData = async (): Promise<void> => {
             [u.id, u.branch_id]
           );
         }
+      }
+    }
+
+    // 5. Ensure Super Admin user exists for clean/fresh deployment
+    console.log('👤 Ensuring Super Admin account in PostgreSQL...');
+    const superAdminRole = roleIdMap['Super Admin'];
+    const opDept = deptIdMap['OPERATION'];
+    const superAdminCheck = await db.query(
+      `SELECT id FROM users WHERE LOWER(username) = 'superadmin' OR UPPER(role) = 'SUPER_ADMIN'`
+    );
+
+    const defaultPermissions = {
+      dashboard: true,
+      admins: true,
+      roles: true,
+      permissions: true,
+      departments: true,
+      branches: true,
+      targets: true,
+      tasks: true,
+      reports: true,
+      commands: true,
+      noc: true,
+      connections: true,
+      followups: true,
+      settings: true,
+      audit: true,
+      goods_requests: true,
+      goods_items: true,
+      discussions: true,
+      pods: true,
+    };
+
+    if (superAdminCheck.rowCount === 0) {
+      const passwordHash = await bcrypt.hash('Nepal@123', 10);
+      await db.query(
+        `INSERT INTO users (
+           employee_id, username, email, password_hash, full_name, phone,
+           role, role_id, department_id, status, permissions, allowed_branches
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+        [
+          'EMP-1001',
+          'superadmin',
+          'admin@fiberworld.net.np',
+          passwordHash,
+          'Rijan Koirala',
+          '+977-9801123450',
+          'SUPER_ADMIN',
+          superAdminRole || null,
+          opDept || null,
+          'Active',
+          JSON.stringify(defaultPermissions),
+          'ALL',
+        ]
+      );
+      console.log('  ✔ Fresh Super Admin account created (username: superadmin, password: Nepal@123).');
+    } else {
+      await db.query(
+        `UPDATE users 
+         SET role = 'SUPER_ADMIN',
+             role_id = COALESCE($1, role_id),
+             department_id = COALESCE($2, department_id),
+             status = 'Active',
+             allowed_branches = 'ALL'
+         WHERE LOWER(username) = 'superadmin' OR UPPER(role) = 'SUPER_ADMIN'`,
+        [superAdminRole, opDept]
+      );
+      console.log('  ✔ Super Admin account status verified as Active with SUPER_ADMIN role.');
+    }
+
+    // 6. Ensure Standard Designations
+    const designations = [
+      { name: 'Operations Manager', code: 'OPS_MGR', deptCode: 'OPERATION', desc: 'Directs branch networks and infrastructure delivery' },
+      { name: 'NOC Lead Engineer', code: 'NOC_LEAD', deptCode: 'NOC', desc: 'Core routing and transmission management' },
+      { name: 'NOC Engineer', code: 'NOC_ENG', deptCode: 'NOC', desc: '24/7 network monitoring and incident escalation' },
+      { name: 'Branch Manager', code: 'BM', deptCode: 'BRANCHES', desc: 'Branch operational leadership and team management' },
+      { name: 'Senior Field Technician', code: 'SR_TECH', deptCode: 'BRANCHES', desc: 'Fiber splicing, OTDR testing, and route restoration' },
+      { name: 'Field Technician', code: 'TECH', deptCode: 'BRANCHES', desc: 'Customer premises installation and maintenance' },
+      { name: 'Customer Support Executive', code: 'SUPPORT_EXEC', deptCode: 'OPERATION', desc: 'Helpdesk phone response and complaint resolution' },
+      { name: 'Branch Accountant', code: 'ACCT', deptCode: 'BRANCHES', desc: 'Daily collections, invoicing, and petty cash' },
+    ];
+
+    for (const d of designations) {
+      const res = await db.query(`SELECT id FROM designations WHERE UPPER(name) = $1 OR UPPER(code) = $2`, [d.name.toUpperCase(), d.code.toUpperCase()]);
+      if (res.rowCount === 0) {
+        await db.query(
+          `INSERT INTO designations (name, code, department_id, description, created_at)
+           VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)`,
+          [d.name, d.code, deptIdMap[d.deptCode] || null, d.desc]
+        );
+      }
+    }
+
+    // 7. Ensure Default System Settings
+    const defaultSettings = [
+      {
+        key: 'performance_weights',
+        value: JSON.stringify({
+          targetWeight: 40,
+          taskCompletionWeight: 30,
+          onTimeWeight: 15,
+          supportFollowUpWeight: 15,
+        }),
+        desc: 'Default performance scoring weights summing to 100%',
+      },
+      {
+        key: 'company_info',
+        value: JSON.stringify({
+          name: 'Fiber World Communication Pvt. Ltd.',
+          shortName: 'FWCPL',
+          panVat: '302918273',
+          license: 'NTA-ISP-2018-091',
+          phone: '+977-1-4789012',
+          email: 'info@fiberworld.net.np',
+          website: 'https://fiberworld.net.np',
+          hqAddress: 'New Baneshwor, Kathmandu, Nepal',
+        }),
+        desc: 'Company legal and contact profile',
+      },
+    ];
+
+    for (const s of defaultSettings) {
+      const sChk = await db.query(`SELECT key FROM settings WHERE key = $1`, [s.key]);
+      if (sChk.rowCount === 0) {
+        await db.query(
+          `INSERT INTO settings (key, value, description, updated_at) VALUES ($1, $2, $3, CURRENT_TIMESTAMP)`,
+          [s.key, s.value, s.desc]
+        );
       }
     }
 

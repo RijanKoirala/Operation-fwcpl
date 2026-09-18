@@ -12,12 +12,11 @@ interface QueryResult {
 class DatabaseManager {
   private pgPool: Pool | null = null;
   private sqliteDb: any = null;
-  private usePostgres = false;
+  private usePostgres = true;
 
   async init(): Promise<void> {
-    // Attempt connecting to PostgreSQL first
     try {
-      const pool = new Pool({
+      let pool = new Pool({
         host: config.db.host,
         port: config.db.port,
         user: config.db.user,
@@ -26,15 +25,54 @@ class DatabaseManager {
         connectionTimeoutMillis: 5000,
       });
 
-      // Quick probe
-      const client = await pool.connect();
-      await client.query('SELECT 1');
-      client.release();
+      // Quick probe connection
+      try {
+        const client = await pool.connect();
+        await client.query('SELECT 1');
+        client.release();
+      } catch (probeErr: any) {
+        // If database does not exist, automatically connect to default 'postgres' db and create it!
+        if (probeErr.message && probeErr.message.includes('does not exist')) {
+          console.log(`Database '${config.db.name}' does not exist on PostgreSQL. Creating it now...`);
+          const adminPool = new Pool({
+            host: config.db.host,
+            port: config.db.port,
+            user: config.db.user,
+            password: config.db.password,
+            database: 'postgres',
+            connectionTimeoutMillis: 5000,
+          });
+          const adminClient = await adminPool.connect();
+          await adminClient.query(`CREATE DATABASE "${config.db.name}"`);
+          adminClient.release();
+          await adminPool.end();
+          console.log(`✅ Database '${config.db.name}' created successfully on PostgreSQL.`);
+
+          // Re-create pool for the newly created database
+          pool = new Pool({
+            host: config.db.host,
+            port: config.db.port,
+            user: config.db.user,
+            password: config.db.password,
+            database: config.db.name,
+            connectionTimeoutMillis: 5000,
+          });
+          const testClient = await pool.connect();
+          await testClient.query('SELECT 1');
+          testClient.release();
+        } else {
+          throw probeErr;
+        }
+      }
 
       this.pgPool = pool;
       this.usePostgres = true;
-      console.log('✅ Connected to PostgreSQL database successfully.');
+      console.log(`✅ Connected to PostgreSQL database ('${config.db.name}') successfully.`);
       await this.runSchemaPostgres();
+
+      // Automatically migrate superadmin credentials from SQLite if present
+      await this.migrateSqliteUsersIfPresent();
+
       try {
         const { seedRbacData } = await import('../seeds/rbacSeed');
         await seedRbacData();
@@ -48,8 +86,45 @@ class DatabaseManager {
         console.error('⚠️ Goods auto-seed warning:', gErr.message);
       }
     } catch (pgErr: any) {
-      console.warn('⚠️ PostgreSQL unavailable (' + (pgErr.message || 'connection failed') + '). Falling back to local embedded SQLite database for zero-downtime execution.');
-      this.initSqlite();
+      console.error('❌ PostgreSQL Connection Failed:', pgErr.message);
+      throw new Error(`Critical: Unable to connect to PostgreSQL database (${pgErr.message}).`);
+    }
+  }
+
+  private async migrateSqliteUsersIfPresent(): Promise<void> {
+    if (!this.pgPool) return;
+    const candidateSqlitePaths = [
+      path.resolve(__dirname, '../../data/fwcpl.sqlite'),
+      path.resolve(process.cwd(), 'data/fwcpl.sqlite'),
+      '/app/data/fwcpl.sqlite',
+    ];
+
+    for (const sPath of candidateSqlitePaths) {
+      if (fs.existsSync(sPath)) {
+        try {
+          console.log(`🔄 Migrating superadmin credentials from SQLite (${sPath}) to PostgreSQL...`);
+          const sdb = new Database(sPath);
+          const users = sdb.prepare('SELECT * FROM users').all() as any[];
+          for (const u of users) {
+            if (u.username === 'superadmin' || u.role === 'SUPER_ADMIN') {
+              await this.pgPool.query(
+                `INSERT INTO users (employee_id, username, email, password_hash, full_name, phone, role, status, permissions, allowed_branches)
+                 VALUES ($1, $2, $3, $4, $5, $6, 'SUPER_ADMIN', 'Active', $7, 'ALL')
+                 ON CONFLICT (username) DO UPDATE SET password_hash = $4, status = 'Active', role = 'SUPER_ADMIN'`,
+                [u.employee_id || 'EMP-1001', u.username, u.email || 'admin@fiberworld.net.np', u.password_hash, u.full_name || 'Rijan Koirala', u.phone || null, JSON.stringify(u.permissions || {})]
+              );
+              console.log(`  ✔ Super Admin account successfully migrated to PostgreSQL.`);
+            }
+          }
+          sdb.close();
+          // Remove legacy SQLite file so system is purely PostgreSQL
+          try { fs.unlinkSync(sPath); } catch {}
+          console.log(`  ✔ Legacy SQLite file removed. System is now purely PostgreSQL.`);
+        } catch (mErr: any) {
+          console.warn(`  ℹ SQLite migration notice: ${mErr.message}`);
+        }
+        break;
+      }
     }
   }
 

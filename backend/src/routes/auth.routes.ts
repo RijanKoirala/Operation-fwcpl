@@ -17,6 +17,7 @@ router.post('/login', async (req: Request, res: Response) => {
   }
 
   try {
+    console.log(`[AUTH] Login attempt for user/email: "${username.trim()}"`);
     const result = await db.query(
       `SELECT u.*, b.name as branch_name, d.name as designation_name,
               dep.name as department_name, dep.code as department_code,
@@ -26,11 +27,12 @@ router.post('/login', async (req: Request, res: Response) => {
        LEFT JOIN designations d ON u.designation_id = d.id
        LEFT JOIN departments dep ON u.department_id = dep.id
        LEFT JOIN roles r ON u.role_id = r.id
-       WHERE u.username = $1 OR u.email = $1`,
+       WHERE LOWER(u.username) = LOWER($1) OR LOWER(u.email) = LOWER($1)`,
       [username.trim()]
     );
 
     if (result.rowCount === 0) {
+      console.warn(`[AUTH] Login failed: User "${username.trim()}" not found in database.`);
       return res.status(401).json({ success: false, message: 'Invalid username or password.' });
     }
 
@@ -39,6 +41,7 @@ router.post('/login', async (req: Request, res: Response) => {
     // Verify password
     const isMatch = await bcrypt.compare(password, user.password_hash);
     if (!isMatch) {
+      console.warn(`[AUTH] Login failed: Password mismatch for "${user.username}".`);
       return res.status(401).json({ success: false, message: 'Invalid username or password.' });
     }
 

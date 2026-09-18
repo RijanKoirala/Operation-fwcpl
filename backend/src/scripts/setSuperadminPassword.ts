@@ -61,13 +61,29 @@ export const setSuperadminPassword = async (targetPassword: string = 'Nepal@123'
 
     const res = await client.query(
       `UPDATE users 
-       SET password_hash = $1, status = 'Active' 
-       WHERE username = 'superadmin' OR role = 'SUPER_ADMIN' OR email = 'admin@fiberworld.net.np'`,
+       SET password_hash = $1, status = 'Active', role = 'SUPER_ADMIN', allowed_branches = 'ALL' 
+       WHERE LOWER(username) = 'superadmin' OR UPPER(role) = 'SUPER_ADMIN' OR LOWER(email) = 'admin@fiberworld.net.np'`,
       [hash]
     );
+
+    if (res.rowCount === 0) {
+      // Find Super Admin role and Operation dept
+      const rRes = await client.query(`SELECT id FROM roles WHERE name = 'Super Admin' LIMIT 1`);
+      const dRes = await client.query(`SELECT id FROM departments WHERE code = 'OPERATION' LIMIT 1`);
+      const rId = rRes.rows[0]?.id || null;
+      const dId = dRes.rows[0]?.id || null;
+
+      await client.query(
+        `INSERT INTO users (employee_id, username, email, password_hash, full_name, role, role_id, department_id, status, allowed_branches)
+         VALUES ('EMP-1001', 'superadmin', 'admin@fiberworld.net.np', $1, 'Rijan Koirala', 'SUPER_ADMIN', $2, $3, 'Active', 'ALL')`,
+        [hash, rId, dId]
+      );
+      console.log(`✔ PostgreSQL: Super Admin user account created afresh.`);
+    } else {
+      console.log(`✔ PostgreSQL: Superadmin password updated (${res.rowCount} row(s) affected).`);
+    }
     client.release();
     await pool.end();
-    console.log(`✔ PostgreSQL: Superadmin password updated (${res.rowCount} row(s) affected).`);
   } catch (pgErr: any) {
     console.log(`ℹ PostgreSQL not reachable (${pgErr.message}), SQLite is the active persistent DB.`);
   }

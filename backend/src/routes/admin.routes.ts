@@ -662,7 +662,7 @@ router.get('/roles', requirePermission('roles.view'), async (req: Request, res: 
       SELECT r.id, r.name, r.description, r.status, r.is_system, r.created_at, r.updated_at,
              r.department_id, dep.name as department_name, dep.code as department_code,
              (SELECT COUNT(*) FROM users WHERE role_id = r.id) as users_count,
-             (SELECT COUNT(*) FROM role_permissions WHERE role_id = r.id AND (allowed = TRUE OR allowed = 1)) as permissions_count
+             (SELECT COUNT(*) FROM role_permissions WHERE role_id = r.id AND allowed = TRUE) as permissions_count
       FROM roles r
       LEFT JOIN departments dep ON r.department_id = dep.id
       ORDER BY 
@@ -699,10 +699,10 @@ router.get('/roles/:id', requirePermission('roles.view'), async (req: Request, r
     // Fetch assigned permission keys
     const rpRes = await db.query(
       `SELECT p.id, p.permission_key, p.name, p.module
-       FROM role_permissions rp
-       JOIN permissions p ON rp.permission_id = p.id
-       WHERE rp.role_id = $1 AND (rp.allowed = TRUE OR rp.allowed = 1)`,
-      [roleId]
+        FROM role_permissions rp
+        JOIN permissions p ON rp.permission_id = p.id
+        WHERE rp.role_id = $1 AND rp.allowed = TRUE`,
+       [roleId]
     );
 
     const permissions = rpRes.rows;
@@ -954,7 +954,7 @@ router.get('/permissions/matrix', requirePermission('permissions.view'), async (
     const permsRes = await db.query(`SELECT id, module, name, permission_key, description FROM permissions ORDER BY module, name`);
 
     // Fetch all role_permissions
-    const rpRes = await db.query(`SELECT role_id, permission_id, allowed FROM role_permissions WHERE allowed = TRUE OR allowed = 1`);
+    const rpRes = await db.query(`SELECT role_id, permission_id, allowed FROM role_permissions WHERE allowed = TRUE`);
 
     // Build matrix: roleId -> Set of permissionIds
     const matrix: Record<number, number[]> = {};

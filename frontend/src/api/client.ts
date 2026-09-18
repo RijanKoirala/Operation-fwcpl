@@ -24,10 +24,25 @@ async function request<T = any>(endpoint: string, options: RequestInit = {}): Pr
     headers.set('Content-Type', 'application/json');
   }
 
-  const response = await fetch(`${BASE_URL}${endpoint}`, {
-    ...options,
-    headers,
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+  let response: Response;
+  try {
+    response = await fetch(`${BASE_URL}${endpoint}`, {
+      ...options,
+      headers,
+      signal: options.signal || controller.signal,
+    });
+  } catch (netErr: any) {
+    clearTimeout(timeoutId);
+    if (netErr.name === 'AbortError') {
+      throw new Error('Server request timed out. Please check server status.');
+    }
+    throw netErr;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   if (response.status === 401) {
     removeAuthToken();
@@ -106,6 +121,7 @@ export const api = {
     getById: (id: number) => api.get(`/branches/${id}`),
     create: (data: any) => api.post('/branches', data),
     update: (id: number, data: any) => api.put(`/branches/${id}`, data),
+    delete: (id: number) => api.delete(`/branches/${id}`),
     getDashboard: (id: number) => api.get(`/branches/${id}/dashboard`),
   },
 

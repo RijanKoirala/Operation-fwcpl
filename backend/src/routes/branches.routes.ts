@@ -367,25 +367,35 @@ router.delete('/:id', authenticate, requirePermission('branches.delete'), async 
   const branchId = parseInt(req.params.id, 10);
 
   try {
-    // Soft delete / set status to Inactive
-    const result = await db.query(
-      `UPDATE branches SET status = 'Inactive', updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING *`,
-      [branchId]
-    );
-
-    if (result.rowCount === 0) {
+    const branchCheck = await db.query('SELECT * FROM branches WHERE id = $1', [branchId]);
+    if (branchCheck.rowCount === 0) {
       return res.status(404).json({ success: false, message: 'Branch not found.' });
     }
 
+    const branch = branchCheck.rows[0];
+
+    // Safely clear foreign key references before deletion
+    await db.query('UPDATE users SET branch_id = NULL WHERE branch_id = $1', [branchId]);
+    await db.query('DELETE FROM user_branches WHERE branch_id = $1', [branchId]);
+    await db.query('DELETE FROM tasks WHERE branch_id = $1', [branchId]);
+    await db.query('DELETE FROM connections WHERE branch_id = $1', [branchId]);
+    await db.query('DELETE FROM support_tickets WHERE branch_id = $1', [branchId]);
+    await db.query('DELETE FROM follow_ups WHERE branch_id = $1', [branchId]);
+    await db.query('DELETE FROM targets WHERE branch_id = $1', [branchId]);
+    await db.query('DELETE FROM goods_requests WHERE branch_id = $1', [branchId]);
+    await db.query('DELETE FROM pods WHERE branch_id = $1', [branchId]);
+    await db.query('DELETE FROM branches WHERE id = $1', [branchId]);
+
     await logActivity({
       userId: req.user!.id,
-      action: 'DEACTIVATE_BRANCH',
+      action: 'DELETE_BRANCH',
       module: 'BRANCHES',
       recordId: branchId,
+      details: { name: branch.name, code: branch.code },
       req,
     });
 
-    return res.json({ success: true, message: 'Branch deactivated successfully.' });
+    return res.json({ success: true, message: `Branch '${branch.name}' has been deleted successfully.` });
   } catch (err: any) {
     return res.status(500).json({ success: false, message: err.message });
   }
