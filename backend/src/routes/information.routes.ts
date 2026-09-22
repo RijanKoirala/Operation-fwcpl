@@ -10,11 +10,12 @@ const router = Router();
 const isCentralUser = (user: any): boolean => {
   if (!user) return false;
   const role = (user.role || '').toUpperCase();
+  const dept = (user.departmentCode || user.department_code || '').toUpperCase();
   return (
     role === 'SUPER_ADMIN' ||
     role === 'MANAGEMENT' ||
-    user.department_code === 'OPERATION' ||
-    user.department_code === 'OPS'
+    dept === 'OPERATION' ||
+    dept === 'OPS'
   );
 };
 
@@ -26,7 +27,7 @@ router.get('/', authenticate, requirePermission('information.view'), async (req:
     const { type, priority, status, search, pinned_only } = req.query;
     const user = req.user!;
     const isOps = isCentralUser(user);
-    const branchId = user.branch_id;
+    const branchId = user.branchId || user.branch_id;
 
     const whereClauses: string[] = [];
     const params: any[] = [user.id]; // $1 = user.id
@@ -125,7 +126,7 @@ router.get('/unread-count', authenticate, async (req: Request, res: Response) =>
   try {
     const user = req.user!;
     const isOps = isCentralUser(user);
-    const branchId = user.branch_id;
+    const branchId = user.branchId || user.branch_id;
 
     const whereClauses: string[] = [
       `i.status = 'PUBLISHED'`,

@@ -11,10 +11,11 @@ const getUserBranchScope = (req: Request): number | null => {
   const user = req.user;
   if (!user) return null;
   const role = (user.role || '').toUpperCase();
-  if (role === 'SUPER_ADMIN' || role === 'MANAGEMENT' || (user as any).department_code === 'OPERATION') {
+  const dept = (user.departmentCode || user.department_code || '').toUpperCase();
+  if (role === 'SUPER_ADMIN' || role === 'MANAGEMENT' || dept === 'OPERATION' || dept === 'OPS') {
     return null; // All branches
   }
-  return user.branch_id || null;
+  return user.branchId || user.branch_id || null;
 };
 
 // ============================================================

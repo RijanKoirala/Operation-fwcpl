@@ -16,7 +16,9 @@ export interface AuthUser {
   departmentId: number | null;
   departmentName: string | null;
   departmentCode?: string | null;
+  department_code?: string | null;
   branchId: number | null;
+  branch_id?: number | null;
   designationId: number | null;
   permissions: Record<string, boolean>;
   assignedBranchIds: number[];
@@ -193,7 +195,9 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
       departmentId: userRow.department_id,
       departmentName: userRow.department_name,
       departmentCode: userRow.department_code || null,
+      department_code: userRow.department_code || null,
       branchId: userRow.branch_id,
+      branch_id: userRow.branch_id,
       designationId: userRow.designation_id,
       permissions: effectivePermissions,
       assignedBranchIds,
