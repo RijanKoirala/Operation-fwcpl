@@ -126,6 +126,30 @@ export const INITIAL_PERMISSIONS: PermissionDefinition[] = [
   { module: 'PODs', name: 'Edit POD Item', key: 'pods.items.edit', description: 'Modify item quantity, unit, description, or status in POD' },
   { module: 'PODs', name: 'Delete POD Item', key: 'pods.items.delete', description: 'Remove item/equipment from POD' },
   { module: 'PODs', name: 'View POD History', key: 'pods.history.view', description: 'View change audit history for PODs and items' },
+
+  // 21. Electricity Meter
+  { module: 'Electricity Meter', name: 'View Electricity Meter', key: 'electricity.view', description: 'Access electricity meter module and readings' },
+  { module: 'Electricity Meter', name: 'View All Branches Meters', key: 'electricity.all_branches.view', description: 'View electricity meters across all branches' },
+  { module: 'Electricity Meter', name: 'Create Meter', key: 'electricity.meters.create', description: 'Register new electricity meter for branch' },
+  { module: 'Electricity Meter', name: 'Edit Meter', key: 'electricity.meters.edit', description: 'Modify electricity meter details, type, or status' },
+  { module: 'Electricity Meter', name: 'Delete Meter', key: 'electricity.meters.delete', description: 'Remove electricity meter' },
+  { module: 'Electricity Meter', name: 'View Readings', key: 'electricity.readings.view', description: 'View meter reading logs and counter photos' },
+  { module: 'Electricity Meter', name: 'Create Reading', key: 'electricity.readings.create', description: 'Record new meter reading with counter photo' },
+  { module: 'Electricity Meter', name: 'Edit Reading', key: 'electricity.readings.edit', description: 'Modify recorded reading or reset baseline' },
+  { module: 'Electricity Meter', name: 'Delete Reading', key: 'electricity.readings.delete', description: 'Delete erroneous reading' },
+  { module: 'Electricity Meter', name: 'View Payments', key: 'electricity.payment.view', description: 'View electricity bills, payments, and due units' },
+  { module: 'Electricity Meter', name: 'Create Payment', key: 'electricity.payment.create', description: 'Record bill amount, paid units, and payment slip' },
+  { module: 'Electricity Meter', name: 'Edit Payment', key: 'electricity.payment.edit', description: 'Update electricity bill status and payment details' },
+  { module: 'Electricity Meter', name: 'View Electricity History', key: 'electricity.history.view', description: 'View electricity change logs and audit trail' },
+
+  // 22. Share Information
+  { module: 'Share Information', name: 'View Information', key: 'information.view', description: 'Access company notices, circulars, rules, and announcements' },
+  { module: 'Share Information', name: 'Create Information', key: 'information.create', description: 'Compose new announcement, notice, or circular' },
+  { module: 'Share Information', name: 'Edit Information', key: 'information.edit', description: 'Update announcement details, audience, or media' },
+  { module: 'Share Information', name: 'Publish Information', key: 'information.publish', description: 'Publish or schedule announcement to branches' },
+  { module: 'Share Information', name: 'Delete Information', key: 'information.delete', description: 'Archive or remove announcement' },
+  { module: 'Share Information', name: 'Pin Information', key: 'information.pin', description: 'Pin announcement to top featured carousel' },
+  { module: 'Share Information', name: 'View Information History', key: 'information.view_history', description: 'View audience delivery and read receipts' },
 ];
 
 export const seedRbacData = async (): Promise<void> => {
@@ -210,6 +234,10 @@ export const seedRbacData = async (): Promise<void> => {
           'pods.view', 'pods.view_all', 'pods.create', 'pods.edit', 'pods.delete',
           'pods.items.view', 'pods.items.create', 'pods.items.edit', 'pods.items.delete',
           'pods.history.view',
+          'electricity.view', 'electricity.all_branches.view', 'electricity.meters.create', 'electricity.meters.edit', 'electricity.meters.delete',
+          'electricity.readings.view', 'electricity.readings.create', 'electricity.readings.edit', 'electricity.readings.delete',
+          'electricity.payment.view', 'electricity.payment.create', 'electricity.payment.edit', 'electricity.history.view',
+          'information.view', 'information.create', 'information.edit', 'information.publish', 'information.delete', 'information.pin', 'information.view_history',
         ],
       },
       {
@@ -227,6 +255,7 @@ export const seedRbacData = async (): Promise<void> => {
           'pods.view', 'pods.view_all', 'pods.create', 'pods.edit',
           'pods.items.view', 'pods.items.create', 'pods.items.edit',
           'pods.history.view',
+          'information.view',
         ],
       },
       {
@@ -247,6 +276,8 @@ export const seedRbacData = async (): Promise<void> => {
           'goods_requests.view', 'goods_requests.view_branch', 'goods_requests.create',
           'goods_requests.edit', 'goods_requests.cancel', 'goods_items.view',
           'pods.view', 'pods.items.view', 'pods.history.view',
+          'electricity.view', 'electricity.readings.view', 'electricity.readings.create', 'electricity.payment.view', 'electricity.history.view',
+          'information.view',
         ],
       },
     ];

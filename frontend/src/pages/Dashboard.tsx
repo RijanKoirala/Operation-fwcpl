@@ -13,6 +13,8 @@ import {
   ArrowUpRight,
   PackageCheck,
   Truck,
+  Zap,
+  Megaphone,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { StatCard } from '../components/common/StatCard';
@@ -41,14 +43,28 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   const [loading, setLoading] = useState(true);
   const [taskPeriod, setTaskPeriod] = useState('month');
   const [leaderboardTab, setLeaderboardTab] = useState<'branch' | 'staff'>('branch');
+  const [elecStats, setElecStats] = useState<any>(null);
+  const [unreadNotices, setUnreadNotices] = useState<number>(0);
 
   const fetchDashboard = async (period: string = taskPeriod) => {
     try {
       setLoading(true);
-      const res = await api.get('/dashboard/main');
-      if (res.success) {
-        setData(res);
+      const [res, eRes, iRes] = await Promise.allSettled([
+        api.get('/dashboard/main'),
+        api.electricity.getStats(),
+        api.information.getUnreadCount(),
+      ]);
+
+      if (res.status === 'fulfilled' && res.value?.success) {
+        setData(res.value);
       }
+      if (eRes.status === 'fulfilled' && eRes.value?.success) {
+        setElecStats(eRes.value.stats);
+      }
+      if (iRes.status === 'fulfilled' && iRes.value?.success) {
+        setUnreadNotices(iRes.value.unreadCount || 0);
+      }
+
       // If period changed, fetch task podium specifically
       if (period !== 'month') {
         const pRes = await api.get(`/performance/podium/task-completers?period=${period}`);
@@ -56,7 +72,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
           setData((prev: any) => ({
             ...prev,
             podiums: {
-              ...prev.podiums,
+              ...prev?.podiums,
               taskCompleters: pRes.podium,
             },
           }));
@@ -200,6 +216,47 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
           </div>
           <div className="p-3 bg-amber-50 text-amber-600 rounded-xl">
             <Clock className="w-6 h-6" />
+          </div>
+        </div>
+
+        <div
+          onClick={() => onNavigate?.('electricity')}
+          className="p-4 bg-white rounded-2xl border border-slate-100 shadow-2xs hover:shadow-md cursor-pointer transition-all flex items-center justify-between"
+        >
+          <div>
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Branch Electricity Consumption</span>
+            <div className="flex items-baseline gap-2 mt-0.5">
+              <h4 className="text-3xl font-black text-slate-900">
+                {elecStats?.currentMonthUnits ? Number(elecStats.currentMonthUnits).toLocaleString() : '0'}{' '}
+                <span className="text-sm font-normal text-slate-500">Units</span>
+              </h4>
+              <span className="text-xs font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-md">This Month</span>
+            </div>
+            <p className="text-xs text-indigo-600 font-semibold mt-1">
+              {elecStats?.activeMeters || 0} meters monitored • {elecStats?.pendingBillsCount || 0} unpaid bills
+            </p>
+          </div>
+          <div className="p-3 bg-amber-50 text-amber-600 rounded-xl">
+            <Zap className="w-6 h-6" />
+          </div>
+        </div>
+
+        <div
+          onClick={() => onNavigate?.('share-information')}
+          className="p-4 bg-white rounded-2xl border border-slate-100 shadow-2xs hover:shadow-md cursor-pointer transition-all flex items-center justify-between"
+        >
+          <div>
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Share Information & Circulars</span>
+            <div className="flex items-baseline gap-2 mt-0.5">
+              <h4 className="text-3xl font-black text-slate-900">{unreadNotices}</h4>
+              <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md">Unread</span>
+            </div>
+            <p className="text-xs text-slate-500 font-semibold mt-1">
+              Official policies, notices, holidays, and rules
+            </p>
+          </div>
+          <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl">
+            <Megaphone className="w-6 h-6" />
           </div>
         </div>
       </div>

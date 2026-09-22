@@ -19,6 +19,9 @@ import {
   PackageCheck,
   MessagesSquare,
   Server,
+  Zap,
+  Megaphone,
+  Ticket,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
@@ -75,6 +78,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
       permissionKey: 'tasks',
     },
     {
+      label: 'Tickets',
+      path: 'tickets',
+      icon: <Ticket className="w-5 h-5" />,
+      allowedRoles: ['SUPER_ADMIN', 'MANAGEMENT', 'BRANCH_MANAGER', 'STAFF'],
+      permissionKey: 'tickets',
+    },
+    {
+      label: 'Follow-ups',
+      path: 'followups',
+      icon: <CalendarClock className="w-5 h-5" />,
+      allowedRoles: ['SUPER_ADMIN', 'MANAGEMENT', 'BRANCH_MANAGER', 'STAFF'],
+      permissionKey: 'followups',
+    },
+    {
+      label: 'Instructions',
+      path: 'instructions',
+      icon: <FileText className="w-5 h-5" />,
+      allowedRoles: ['SUPER_ADMIN', 'MANAGEMENT', 'BRANCH_MANAGER', 'STAFF'],
+      permissionKey: 'instructions',
+    },
+    {
       label: 'Discussion Box',
       path: 'discussions',
       icon: <MessagesSquare className="w-5 h-5" />,
@@ -97,27 +121,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
       permissionKey: 'pods',
     },
     {
-      label: 'New Connections',
-      path: 'connections',
-      icon: <Plug className="w-5 h-5" />,
-      allowedRoles: ['SUPER_ADMIN', 'MANAGEMENT', 'BRANCH_MANAGER', 'STAFF'],
-      permissionKey: 'connections',
-    },
-    {
-      label: 'Follow-ups',
-      path: 'followups',
-      icon: <CalendarClock className="w-5 h-5" />,
-      allowedRoles: ['SUPER_ADMIN', 'MANAGEMENT', 'BRANCH_MANAGER', 'STAFF'],
-      permissionKey: 'followups',
-    },
-    {
-      label: 'Instructions',
-      path: 'instructions',
-      icon: <FileText className="w-5 h-5" />,
-      allowedRoles: ['SUPER_ADMIN', 'MANAGEMENT', 'BRANCH_MANAGER', 'STAFF'],
-      permissionKey: 'instructions',
-    },
-    {
       label: 'Request Goods',
       path: 'request-goods',
       icon: <PackageCheck className="w-5 h-5" />,
@@ -125,11 +128,32 @@ export const Sidebar: React.FC<SidebarProps> = ({
       permissionKey: 'goods_requests',
     },
     {
+      label: 'Electricity Meter',
+      path: 'electricity',
+      icon: <Zap className="w-5 h-5" />,
+      allowedRoles: ['SUPER_ADMIN', 'MANAGEMENT', 'BRANCH_MANAGER', 'STAFF'],
+      permissionKey: 'electricity',
+    },
+    {
+      label: 'Share Information',
+      path: 'share-information',
+      icon: <Megaphone className="w-5 h-5" />,
+      allowedRoles: ['SUPER_ADMIN', 'MANAGEMENT', 'BRANCH_MANAGER', 'STAFF'],
+      permissionKey: 'information',
+    },
+    {
       label: 'Targets / KPI',
       path: 'targets',
       icon: <Target className="w-5 h-5" />,
       allowedRoles: ['SUPER_ADMIN', 'MANAGEMENT', 'BRANCH_MANAGER', 'STAFF'],
       permissionKey: 'targets',
+    },
+    {
+      label: 'New Connections',
+      path: 'connections',
+      icon: <Plug className="w-5 h-5" />,
+      allowedRoles: ['SUPER_ADMIN', 'MANAGEMENT', 'BRANCH_MANAGER', 'STAFF'],
+      permissionKey: 'connections',
     },
     {
       label: 'Reports',
@@ -193,7 +217,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
     const roleAllowed = item.allowedRoles.map(r => r.toUpperCase().replace(/\s+/g, '_')).includes(userRole);
     if (!roleAllowed) return false;
     if (item.permissionKey && !hasPermission(item.permissionKey)) {
-      if (item.permissionKey === 'discussions' || item.permissionKey === 'pods') {
+      if (
+        item.permissionKey === 'discussions' ||
+        item.permissionKey === 'pods' ||
+        item.permissionKey === 'electricity' ||
+        item.permissionKey === 'information'
+      ) {
         return true;
       }
       return false;

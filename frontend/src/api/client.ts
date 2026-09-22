@@ -313,5 +313,33 @@ export const api = {
     // History
     getHistory: (podId: number) => api.get(`/pods/${podId}/history`),
   },
+
+  // Electricity Meter Module
+  electricity: {
+    getMeters: (params?: any) => api.get(`/electricity/meters${toQueryString(params)}`),
+    createMeter: (data: any) => api.post('/electricity/meters', data),
+    updateMeter: (id: number, data: any) => api.put(`/electricity/meters/${id}`, data),
+    deleteMeter: (id: number) => api.delete(`/electricity/meters/${id}`),
+    getReadings: (meterId: number) => api.get(`/electricity/meters/${meterId}/readings`),
+    recordReading: (formData: FormData) => api.post('/electricity/readings', formData),
+    deleteReading: (id: number) => api.delete(`/electricity/readings/${id}`),
+    getPayments: (params?: any) => api.get(`/electricity/payments${toQueryString(params)}`),
+    createPayment: (formData: FormData) => api.post('/electricity/payments', formData),
+    updatePayment: (id: number, formData: FormData) => api.put(`/electricity/payments/${id}`, formData),
+    deletePayment: (id: number) => api.delete(`/electricity/payments/${id}`),
+    getStats: (params?: any) => api.get(`/electricity/stats${toQueryString(params)}`),
+  },
+
+  // Share Information Module
+  information: {
+    getAll: (params?: any) => api.get(`/information${toQueryString(params)}`),
+    getById: (id: number) => api.get(`/information/${id}`),
+    getUnreadCount: () => api.get('/information/unread-count'),
+    create: (formData: FormData) => api.post('/information', formData),
+    update: (id: number, formData: FormData) => api.put(`/information/${id}`, formData),
+    delete: (id: number) => api.delete(`/information/${id}`),
+    togglePin: (id: number) => api.put(`/information/${id}/pin`),
+  },
 };
+
 

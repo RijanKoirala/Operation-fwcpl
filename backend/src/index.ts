@@ -29,6 +29,8 @@ import goodsItemRoutes from './routes/goodsItems.routes';
 import goodsRequestRoutes from './routes/goodsRequests.routes';
 import discussionRoutes from './routes/discussions.routes';
 import podRoutes from './routes/pods.routes';
+import electricityRoutes from './routes/electricity.routes';
+import informationRoutes from './routes/information.routes';
 
 const app = express();
 
@@ -74,6 +76,8 @@ app.use('/api/goods-items', goodsItemRoutes);
 app.use('/api/goods-requests', goodsRequestRoutes);
 app.use('/api/discussions', discussionRoutes);
 app.use('/api/pods', podRoutes);
+app.use('/api/electricity', electricityRoutes);
+app.use('/api/information', informationRoutes);
 
 // Global Error Handler
 app.use((err: any, req: Request, res: Response, next: any) => {

@@ -470,10 +470,114 @@ class DatabaseManager {
         CREATE INDEX IF NOT EXISTS idx_pod_items_pod ON pod_items(pod_id);
         CREATE INDEX IF NOT EXISTS idx_pod_items_status ON pod_items(status);
         CREATE INDEX IF NOT EXISTS idx_pod_history_pod ON pod_history(pod_id);
+
+        CREATE TABLE IF NOT EXISTS electricity_meters (
+            id SERIAL PRIMARY KEY,
+            branch_id INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+            name VARCHAR(150) NOT NULL,
+            meter_number VARCHAR(100) NOT NULL,
+            meter_type VARCHAR(50) NOT NULL DEFAULT 'Main',
+            location VARCHAR(255),
+            installation_date DATE,
+            status VARCHAR(30) NOT NULL DEFAULT 'Active',
+            description TEXT,
+            remarks TEXT,
+            created_by_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS electricity_readings (
+            id SERIAL PRIMARY KEY,
+            meter_id INTEGER NOT NULL REFERENCES electricity_meters(id) ON DELETE CASCADE,
+            reading_date DATE NOT NULL,
+            previous_reading NUMERIC(14, 2),
+            current_reading NUMERIC(14, 2) NOT NULL,
+            units_used NUMERIC(14, 2) NOT NULL DEFAULT 0,
+            is_reset BOOLEAN DEFAULT FALSE,
+            reset_reason TEXT,
+            image_url TEXT,
+            remarks TEXT,
+            recorded_by_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS electricity_payments (
+            id SERIAL PRIMARY KEY,
+            meter_id INTEGER NOT NULL REFERENCES electricity_meters(id) ON DELETE CASCADE,
+            reading_id INTEGER REFERENCES electricity_readings(id) ON DELETE SET NULL,
+            bill_number VARCHAR(100),
+            bill_date DATE NOT NULL,
+            due_date DATE,
+            billed_units NUMERIC(14, 2) DEFAULT 0,
+            rate_per_unit NUMERIC(10, 2) DEFAULT 0,
+            bill_amount NUMERIC(14, 2) NOT NULL DEFAULT 0,
+            paid_amount NUMERIC(14, 2) NOT NULL DEFAULT 0,
+            paid_units NUMERIC(14, 2) DEFAULT 0,
+            due_units NUMERIC(14, 2) DEFAULT 0,
+            payment_status VARCHAR(30) NOT NULL DEFAULT 'UNPAID',
+            payment_date DATE,
+            payment_method VARCHAR(50),
+            bill_image_url TEXT,
+            receipt_image_url TEXT,
+            remarks TEXT,
+            recorded_by_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_elec_meters_branch ON electricity_meters(branch_id);
+        CREATE INDEX IF NOT EXISTS idx_elec_meters_status ON electricity_meters(status);
+        CREATE INDEX IF NOT EXISTS idx_elec_readings_meter ON electricity_readings(meter_id);
+        CREATE INDEX IF NOT EXISTS idx_elec_readings_date ON electricity_readings(reading_date DESC);
+        CREATE INDEX IF NOT EXISTS idx_elec_payments_meter ON electricity_payments(meter_id);
+        CREATE INDEX IF NOT EXISTS idx_elec_payments_status ON electricity_payments(payment_status);
+
+        CREATE TABLE IF NOT EXISTS information (
+            id SERIAL PRIMARY KEY,
+            title VARCHAR(255) NOT NULL,
+            type VARCHAR(50) NOT NULL DEFAULT 'GENERAL',
+            priority VARCHAR(20) NOT NULL DEFAULT 'Medium',
+            status VARCHAR(20) NOT NULL DEFAULT 'PUBLISHED',
+            target_type VARCHAR(20) NOT NULL DEFAULT 'ALL_BRANCHES',
+            is_pinned BOOLEAN NOT NULL DEFAULT FALSE,
+            content TEXT NOT NULL,
+            image_url TEXT,
+            attachment_url TEXT,
+            publish_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMP,
+            created_by_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS information_branches (
+            id SERIAL PRIMARY KEY,
+            information_id INTEGER NOT NULL REFERENCES information(id) ON DELETE CASCADE,
+            branch_id INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+            UNIQUE(information_id, branch_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS information_reads (
+            id SERIAL PRIMARY KEY,
+            information_id INTEGER NOT NULL REFERENCES information(id) ON DELETE CASCADE,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            read_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(information_id, user_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_information_status ON information(status);
+        CREATE INDEX IF NOT EXISTS idx_information_type ON information(type);
+        CREATE INDEX IF NOT EXISTS idx_information_pinned ON information(is_pinned);
+        CREATE INDEX IF NOT EXISTS idx_information_publish_at ON information(publish_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_info_branches_info ON information_branches(information_id);
+        CREATE INDEX IF NOT EXISTS idx_info_branches_branch ON information_branches(branch_id);
+        CREATE INDEX IF NOT EXISTS idx_info_reads_user ON information_reads(user_id, information_id);
       `);
-      console.log('✅ PostgreSQL NOC, RBAC, Goods, Discussions & POD tables verified & ready.');
+      console.log('✅ PostgreSQL NOC, RBAC, Goods, Discussions, POD, Electricity & Information tables verified & ready.');
     } catch (nocErr: any) {
-      console.error('❌ Failed to ensure NOC/RBAC tables in PostgreSQL:', nocErr.message);
+      console.error('❌ Failed to ensure NOC/RBAC/Electricity/Information tables in PostgreSQL:', nocErr.message);
     }
   }
 

@@ -21,6 +21,8 @@ import {
   Sparkles,
   Activity,
   PackageCheck,
+  Zap,
+  Megaphone,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -333,6 +335,47 @@ export const BranchDashboard: React.FC<BranchDashboardProps> = ({ branchId: prop
             className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer ml-auto md:ml-2"
           >
             <span>+ Request Goods</span>
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+
+      {/* Electricity Meter & Share Information Quick Access Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div
+          onClick={() => onNavigate?.('electricity')}
+          className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-2xs hover:shadow-md transition-all cursor-pointer flex items-center justify-between"
+        >
+          <div className="flex items-center gap-3">
+            <div className="p-3 bg-amber-50 text-amber-600 rounded-xl shrink-0">
+              <Zap className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-slate-900">Branch Electricity Meters</h4>
+              <p className="text-xs text-slate-500">Record periodic meter readings with counter photos & check bills</p>
+            </div>
+          </div>
+          <button className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 font-semibold text-xs rounded-xl transition flex items-center gap-1">
+            <span>Meters</span>
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        <div
+          onClick={() => onNavigate?.('share-information')}
+          className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-2xs hover:shadow-md transition-all cursor-pointer flex items-center justify-between"
+        >
+          <div className="flex items-center gap-3">
+            <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl shrink-0">
+              <Megaphone className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-slate-900">Company Notices & Policies</h4>
+              <p className="text-xs text-slate-500">View official instructions, HR circulars, rules, and holiday schedules</p>
+            </div>
+          </div>
+          <button className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold text-xs rounded-xl transition flex items-center gap-1">
+            <span>Updates</span>
             <ChevronRight className="w-3.5 h-3.5" />
           </button>
         </div>

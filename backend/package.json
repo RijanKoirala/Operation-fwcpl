@@ -5,7 +5,7 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "nodemon --watch src --ext ts --exec ts-node src/index.ts",
-    "build": "tsc",
+    "build": "tsc && node -e \"const fs=require('fs'); fs.mkdirSync('dist/models', {recursive:true}); fs.copyFileSync('src/models/schema.sql', 'dist/models/schema.sql');\"",
     "start": "node dist/index.js",
     "seed": "node dist/seeds/runSeed.js",
     "seed:dev": "ts-node src/seeds/runSeed.ts",

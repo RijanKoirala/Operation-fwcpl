@@ -13,7 +13,7 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
     );
 
     const unreadCountRes = await db.query(
-      `SELECT COUNT(*) as count FROM notifications WHERE user_id = $1 AND is_read = 0`,
+      `SELECT COUNT(*) as count FROM notifications WHERE user_id = $1 AND is_read = FALSE`,
       [req.user!.id]
     );
 
@@ -33,7 +33,7 @@ router.put('/:id/read', authenticate, async (req: Request, res: Response) => {
 
   try {
     await db.query(
-      `UPDATE notifications SET is_read = 1 WHERE id = $1 AND user_id = $2`,
+      `UPDATE notifications SET is_read = TRUE WHERE id = $1 AND user_id = $2`,
       [notifId, req.user!.id]
     );
     return res.json({ success: true, message: 'Notification marked as read.' });
@@ -45,7 +45,7 @@ router.put('/:id/read', authenticate, async (req: Request, res: Response) => {
 // PUT /api/notifications/mark-all-read
 router.put('/mark-all-read', authenticate, async (req: Request, res: Response) => {
   try {
-    await db.query(`UPDATE notifications SET is_read = 1 WHERE user_id = $1`, [req.user!.id]);
+    await db.query(`UPDATE notifications SET is_read = TRUE WHERE user_id = $1`, [req.user!.id]);
     return res.json({ success: true, message: 'All notifications marked as read.' });
   } catch (err: any) {
     return res.status(500).json({ success: false, message: err.message });

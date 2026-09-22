@@ -12,6 +12,7 @@ import { StaffDashboard } from './pages/StaffDashboard';
 import { Branches } from './pages/Branches';
 import { Staff } from './pages/Staff';
 import { Tasks } from './pages/Tasks';
+import { Tickets } from './pages/Tickets';
 import { NocIssues } from './pages/NocIssues';
 import { Connections } from './pages/Connections';
 import { FollowUps } from './pages/FollowUps';
@@ -26,6 +27,8 @@ import { Administration } from './pages/Administration';
 import { RequestGoods } from './pages/RequestGoods';
 import { Discussions } from './pages/Discussions';
 import { Pods } from './pages/Pods';
+import { ElectricityMeter } from './pages/ElectricityMeter';
+import { ShareInformation } from './pages/ShareInformation';
 
 export const App: React.FC = () => {
   const { user, isLoading, hasPermission } = useAuth();
@@ -110,6 +113,7 @@ export const App: React.FC = () => {
     const permMap: Record<string, string> = {
       staff: 'staff',
       tasks: 'tasks',
+      tickets: 'tickets',
       noc: 'noc',
       discussions: 'discussions',
       pods: 'pods',
@@ -124,10 +128,20 @@ export const App: React.FC = () => {
       permissions: 'permissions',
       departments: 'departments',
       'request-goods': 'goods_requests',
+      electricity: 'electricity',
+      'share-information': 'information',
+      information: 'information',
     };
 
     const requiredPerm = permMap[currentPage];
-    if (requiredPerm && requiredPerm !== 'discussions' && requiredPerm !== 'pods' && !hasPermission(requiredPerm)) {
+    if (
+      requiredPerm &&
+      requiredPerm !== 'discussions' &&
+      requiredPerm !== 'pods' &&
+      requiredPerm !== 'electricity' &&
+      requiredPerm !== 'information' &&
+      !hasPermission(requiredPerm)
+    ) {
       return (
         <div className="max-w-md mx-auto mt-20 p-8 bg-white rounded-2xl border border-slate-200 shadow-sm text-center">
           <div className="w-12 h-12 bg-rose-50 text-rose-600 rounded-2xl flex items-center justify-center mx-auto mb-4 font-bold text-xl">
@@ -161,12 +175,19 @@ export const App: React.FC = () => {
         return <Staff onNavigate={handleNavigate} />;
       case 'tasks':
         return <Tasks />;
+      case 'tickets':
+        return <Tickets />;
       case 'discussions':
         return <Discussions />;
       case 'noc':
         return isBranchScoped ? <Discussions /> : <NocIssues />;
       case 'pods':
         return <Pods onNavigate={handleNavigate} initialPodId={selectedPodId} />;
+      case 'electricity':
+        return <ElectricityMeter />;
+      case 'share-information':
+      case 'information':
+        return <ShareInformation />;
       case 'connections':
         return <Connections />;
       case 'followups':
