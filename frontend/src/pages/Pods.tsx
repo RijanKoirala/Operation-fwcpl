@@ -292,8 +292,9 @@ export const Pods: React.FC<PodsProps> = ({ onNavigate, initialPodId }) => {
       if (res.success) {
         setShowAddPodModal(false);
         fetchPods();
-        // Automatically open the new POD detail
+        // Automatically open the new POD detail safely
         if (res.pod?.id) {
+          setSelectedPod(res.pod);
           setSelectedPodId(res.pod.id);
         }
       }
@@ -488,6 +489,13 @@ export const Pods: React.FC<PodsProps> = ({ onNavigate, initialPodId }) => {
     }
   };
 
+  // Safe coordinate formatting helper (handles string or number, prevents .toFixed crash)
+  const formatCoord = (val: any) => {
+    if (val === null || val === undefined || String(val).trim() === '') return '';
+    const num = parseFloat(String(val));
+    return isNaN(num) ? String(val) : num.toFixed(4);
+  };
+
   // Filter items in Item Tab
   const filteredItems = items.filter(
     it =>
@@ -499,9 +507,24 @@ export const Pods: React.FC<PodsProps> = ({ onNavigate, initialPodId }) => {
   // =========================================================================
   // VIEW: SINGLE POD/DC DETAIL PAGE
   // =========================================================================
-  if (selectedPodId && selectedPod) {
-    const hasGps = selectedPod.latitude !== null && selectedPod.latitude !== undefined &&
-                   selectedPod.longitude !== null && selectedPod.longitude !== undefined;
+  if (selectedPodId) {
+    if (!selectedPod) {
+      return (
+        <div className="min-h-[400px] flex flex-col items-center justify-center space-y-3">
+          <div className="w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+          <p className="text-xs font-bold text-slate-500">Loading POD / DC details...</p>
+        </div>
+      );
+    }
+
+    const hasGps = Boolean(
+      selectedPod.latitude !== null &&
+      selectedPod.latitude !== undefined &&
+      String(selectedPod.latitude).trim() !== '' &&
+      selectedPod.longitude !== null &&
+      selectedPod.longitude !== undefined &&
+      String(selectedPod.longitude).trim() !== ''
+    );
     const mapUrl = hasGps ? `https://www.google.com/maps?q=${selectedPod.latitude},${selectedPod.longitude}` : '';
 
     return (
@@ -1906,8 +1929,14 @@ export const Pods: React.FC<PodsProps> = ({ onNavigate, initialPodId }) => {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {pods.map(pod => {
-                  const hasGps = pod.latitude !== null && pod.latitude !== undefined &&
-                                 pod.longitude !== null && pod.longitude !== undefined;
+                  const hasGps = Boolean(
+                    pod.latitude !== null &&
+                    pod.latitude !== undefined &&
+                    String(pod.latitude).trim() !== '' &&
+                    pod.longitude !== null &&
+                    pod.longitude !== undefined &&
+                    String(pod.longitude).trim() !== ''
+                  );
                   return (
                     <tr
                       key={pod.id}
@@ -1971,7 +2000,7 @@ export const Pods: React.FC<PodsProps> = ({ onNavigate, initialPodId }) => {
                             title="Open in Google Maps"
                           >
                             <MapPin className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-                            <span>{pod.latitude?.toFixed(4)}, {pod.longitude?.toFixed(4)}</span>
+                            <span>{formatCoord(pod.latitude)}, {formatCoord(pod.longitude)}</span>
                             <ExternalLink className="w-2.5 h-2.5 text-slate-400" />
                           </a>
                         ) : (
