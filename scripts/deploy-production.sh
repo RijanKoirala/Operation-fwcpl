@@ -24,7 +24,7 @@ echo "=================================================================="
 echo "📦 1/4 Checking and committing local git changes..."
 git add .
 if ! git diff-index --quiet HEAD --; then
-    git commit -m "Add Electricity Meter & Share Information modules, tickets route, sidebar order and boolean query fix" || true
+    git commit -m "Support multiple staff assignments for Tasks and New Connections with automated backfill, target sync integrity, and updated UI" || true
     echo "  ✔ Local changes committed to git."
     echo "  🚀 Pushing to GitHub (origin main)..."
     git push origin main || echo "  ℹ Git push skipped or failed (offline / auth); continuing with direct deployment."

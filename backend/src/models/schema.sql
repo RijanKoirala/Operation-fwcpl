@@ -148,6 +148,18 @@ CREATE TABLE IF NOT EXISTS task_status_history (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS task_staff (
+    id SERIAL PRIMARY KEY,
+    task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    staff_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    assigned_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(task_id, staff_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_task_staff_task ON task_staff(task_id);
+CREATE INDEX IF NOT EXISTS idx_task_staff_staff ON task_staff(staff_id);
+
 CREATE TABLE IF NOT EXISTS connections (
     id SERIAL PRIMARY KEY,
     connection_id VARCHAR(50) NOT NULL UNIQUE,
@@ -178,6 +190,18 @@ CREATE TABLE IF NOT EXISTS connection_comments (
     comment TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS connection_staff (
+    id SERIAL PRIMARY KEY,
+    connection_id INTEGER NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+    staff_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    assigned_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(connection_id, staff_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_conn_staff_conn ON connection_staff(connection_id);
+CREATE INDEX IF NOT EXISTS idx_conn_staff_staff ON connection_staff(staff_id);
 
 CREATE TABLE IF NOT EXISTS support_tickets (
     id SERIAL PRIMARY KEY,
@@ -665,6 +689,17 @@ CREATE INDEX IF NOT EXISTS idx_information_publish_at ON information(publish_at 
 CREATE INDEX IF NOT EXISTS idx_info_branches_info ON information_branches(information_id);
 CREATE INDEX IF NOT EXISTS idx_info_branches_branch ON information_branches(branch_id);
 CREATE INDEX IF NOT EXISTS idx_info_reads_user ON information_reads(user_id, information_id);
+
+-- Backfill legacy single-staff assignments to multi-staff junction tables
+INSERT INTO task_staff (task_id, staff_id)
+SELECT id, assigned_to_id FROM tasks
+WHERE assigned_to_id IS NOT NULL
+ON CONFLICT (task_id, staff_id) DO NOTHING;
+
+INSERT INTO connection_staff (connection_id, staff_id)
+SELECT id, assigned_staff_id FROM connections
+WHERE assigned_staff_id IS NOT NULL
+ON CONFLICT (connection_id, staff_id) DO NOTHING;
 
 
 

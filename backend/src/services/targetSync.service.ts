@@ -36,7 +36,7 @@ export const countCompletedConnections = async (
   let empClause = '';
   if (employeeId) {
     params.push(employeeId);
-    empClause = `AND assigned_staff_id = $${params.length}`;
+    empClause = `AND (assigned_staff_id = $${params.length} OR EXISTS (SELECT 1 FROM connection_staff cs WHERE cs.connection_id = connections.id AND cs.staff_id = $${params.length}))`;
   }
 
   const query = `
@@ -183,7 +183,7 @@ export const getContributingConnectionsForTarget = async (targetId: number) => {
   let empClause = '';
   if (target.employee_id) {
     params.push(target.employee_id);
-    empClause = `AND c.assigned_staff_id = $${params.length}`;
+    empClause = `AND (c.assigned_staff_id = $${params.length} OR EXISTS (SELECT 1 FROM connection_staff cs WHERE cs.connection_id = c.id AND cs.staff_id = $${params.length}))`;
   }
 
   const query = `

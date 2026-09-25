@@ -13,12 +13,14 @@ import {
   X,
   RotateCcw,
   UserCheck,
+  Users,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { Task, TaskComment, TaskHistory } from '../types';
 import { StatusBadge, PriorityBadge } from '../components/common/Badge';
 import { Modal } from '../components/common/Modal';
+import { MultiStaffSelect, AssignedStaffPills } from '../components/common/MultiStaffSelect';
 
 export const Tasks: React.FC = () => {
   const { user } = useAuth();
@@ -28,6 +30,7 @@ export const Tasks: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState('');
   const [priorityFilter, setPriorityFilter] = useState('');
   const [branchFilter, setBranchFilter] = useState('');
+  const [staffFilter, setStaffFilter] = useState('');
   const [branches, setBranches] = useState<any[]>([]);
   const [staffMembers, setStaffMembers] = useState<any[]>([]);
 
@@ -43,7 +46,7 @@ export const Tasks: React.FC = () => {
   const [reviewAction, setReviewAction] = useState<'APPROVE' | 'REJECT'>('APPROVE');
   const [reviewRemarks, setReviewRemarks] = useState('');
   const [showReassignModal, setShowReassignModal] = useState(false);
-  const [reassignStaffId, setReassignStaffId] = useState('');
+  const [reassignStaffIds, setReassignStaffIds] = useState<number[]>([]);
 
   // Create Form State
   const [createForm, setCreateForm] = useState({
@@ -51,7 +54,7 @@ export const Tasks: React.FC = () => {
     description: '',
     category: 'General',
     branchId: user?.branchId || '',
-    assignedToId: '',
+    assignedStaffIds: [] as number[],
     priority: 'Medium',
     startDate: new Date().toISOString().split('T')[0],
     dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
@@ -60,12 +63,14 @@ export const Tasks: React.FC = () => {
   const fetchTasks = async () => {
     setLoading(true);
     try {
-      const q = new URLSearchParams({
+      const qObj: Record<string, string> = {
         search,
         status: statusFilter,
         priority: priorityFilter,
         branchId: branchFilter,
-      }).toString();
+      };
+      if (staffFilter) qObj.staffId = staffFilter;
+      const q = new URLSearchParams(qObj).toString();
       const res = await api.get(`/tasks?${q}`);
       if (res.success) setTasks(res.tasks);
     } catch (err) {
@@ -89,7 +94,7 @@ export const Tasks: React.FC = () => {
 
   useEffect(() => {
     fetchTasks();
-  }, [search, statusFilter, priorityFilter, branchFilter]);
+  }, [search, statusFilter, priorityFilter, branchFilter, staffFilter]);
 
   const handleCreateTask = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -102,7 +107,7 @@ export const Tasks: React.FC = () => {
           description: '',
           category: 'General',
           branchId: user?.branchId || '',
-          assignedToId: '',
+          assignedStaffIds: [],
           priority: 'Medium',
           startDate: new Date().toISOString().split('T')[0],
           dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
@@ -178,16 +183,24 @@ export const Tasks: React.FC = () => {
     }
   };
 
+  const openReassignModal = (task: Task) => {
+    const currentIds = (task.assigned_staff && task.assigned_staff.length > 0)
+      ? task.assigned_staff.map(s => (s.staff_id || s.id) as number).filter(Boolean)
+      : (task.assigned_to_id ? [task.assigned_to_id] : []);
+    setReassignStaffIds(currentIds);
+    setShowReassignModal(true);
+  };
+
   const handleReassign = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedTask || !reassignStaffId) return;
+    if (!selectedTask) return;
     try {
       const res = await api.post(`/tasks/${selectedTask.id}/reassign`, {
-        assignedToId: Number(reassignStaffId),
+        assignedStaffIds: reassignStaffIds,
       });
       if (res.success) {
         setShowReassignModal(false);
-        setReassignStaffId('');
+        setReassignStaffIds([]);
         fetchTasks();
         openTaskDetail(res.task);
       }
@@ -285,6 +298,19 @@ export const Tasks: React.FC = () => {
               ))}
             </select>
           )}
+
+          <select
+            value={staffFilter}
+            onChange={e => setStaffFilter(e.target.value)}
+            className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-xl px-3 py-2 font-medium max-w-[150px] truncate"
+          >
+            <option value="">All Staff</option>
+            {staffMembers
+              .filter(s => !branchFilter || Number(s.branch_id) === Number(branchFilter))
+              .map(s => (
+                <option key={s.id} value={s.id}>{s.full_name}</option>
+              ))}
+          </select>
         </div>
       </div>
 
@@ -317,7 +343,9 @@ export const Tasks: React.FC = () => {
                   <span className="text-xs text-slate-400">{t.category}</span>
                 </td>
                 <td className="py-3.5 px-4 text-xs font-medium text-slate-700">{t.branch_name}</td>
-                <td className="py-3.5 px-4 font-medium text-slate-800">{t.assigned_to_name || 'Unassigned'}</td>
+                <td className="py-3.5 px-4 font-medium text-slate-800">
+                  <AssignedStaffPills staff={t.assigned_staff} fallbackName={t.assigned_to_name} />
+                </td>
                 <td className="py-3.5 px-4"><PriorityBadge priority={t.priority} /></td>
                 <td className="py-3.5 px-4 text-xs">
                   <span className={t.is_overdue ? 'text-rose-600 font-bold' : 'text-slate-600'}>
@@ -368,8 +396,66 @@ export const Tasks: React.FC = () => {
                 )}
               </div>
               <div className="text-xs text-slate-500">
-                Due: <b className="text-slate-800">{selectedTask.due_date}</b> • Assigned To:{' '}
-                <b className="text-slate-800">{selectedTask.assigned_to_name || 'Unassigned'}</b>
+                Due: <b className="text-slate-800">{selectedTask.due_date}</b>
+              </div>
+            </div>
+
+            {/* Assigned Operations Team */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="text-xs font-bold uppercase text-slate-400 tracking-wider flex items-center gap-1.5">
+                  <Users className="w-3.5 h-3.5 text-brand-600" />
+                  Assigned Operations Team ({selectedTask.assigned_staff?.length || (selectedTask.assigned_to_name ? 1 : 0)})
+                </h4>
+                {user?.role !== 'STAFF' && selectedTask.status !== 'Closed' && (
+                  <button
+                    type="button"
+                    onClick={() => openReassignModal(selectedTask)}
+                    className="text-[11px] font-bold text-brand-600 hover:text-brand-700 hover:underline"
+                  >
+                    Edit Assignment
+                  </button>
+                )}
+              </div>
+              <div className="bg-white p-3 rounded-xl border border-slate-200">
+                {selectedTask.assigned_staff && selectedTask.assigned_staff.length > 0 ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {selectedTask.assigned_staff.map((s, idx) => (
+                      <div
+                        key={s.staff_id || idx}
+                        className="flex items-center gap-2.5 p-2 rounded-lg bg-slate-50 border border-slate-100"
+                      >
+                        <div className="w-7 h-7 rounded-full bg-brand-100 text-brand-700 font-bold flex items-center justify-center text-xs shrink-0">
+                          {s.full_name ? s.full_name.charAt(0).toUpperCase() : 'U'}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="text-xs font-bold text-slate-800 truncate">
+                            {s.full_name}
+                            {s.is_primary && (
+                              <span className="ml-1.5 px-1.5 py-0.2 text-[9px] bg-brand-50 text-brand-700 font-black rounded border border-brand-200">
+                                Lead
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10px] text-slate-400 truncate">
+                            {s.designation_name || 'Staff'} {s.phone ? `• ${s.phone}` : ''}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : selectedTask.assigned_to_name ? (
+                  <div className="flex items-center gap-2.5 p-2 rounded-lg bg-slate-50 border border-slate-100">
+                    <div className="w-7 h-7 rounded-full bg-brand-100 text-brand-700 font-bold flex items-center justify-center text-xs shrink-0">
+                      {selectedTask.assigned_to_name.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs font-bold text-slate-800 truncate">{selectedTask.assigned_to_name}</div>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-400 italic">No staff members currently assigned.</p>
+                )}
               </div>
             </div>
 
@@ -440,7 +526,7 @@ export const Tasks: React.FC = () => {
                 {/* Reassign action */}
                 {user?.role !== 'STAFF' && selectedTask.status !== 'Closed' && (
                   <button
-                    onClick={() => setShowReassignModal(true)}
+                    onClick={() => openReassignModal(selectedTask)}
                     className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 font-bold text-xs rounded-lg hover:bg-slate-50"
                   >
                     Reassign Task
@@ -607,25 +693,21 @@ export const Tasks: React.FC = () => {
       <Modal isOpen={showReassignModal} onClose={() => setShowReassignModal(false)} title="Reassign Task">
         <form onSubmit={handleReassign} className="space-y-4">
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">Select Assignee *</label>
-            <select
-              required
-              value={reassignStaffId}
-              onChange={e => setReassignStaffId(e.target.value)}
-              className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2"
-            >
-              <option value="">Select Staff Member</option>
-              {staffMembers
-                .filter(s => !selectedTask || s.branch_id === selectedTask.branch_id)
-                .map(s => (
-                  <option key={s.id} value={s.id}>
-                    {s.full_name} ({s.designation_name} - {s.employee_id})
-                  </option>
-                ))}
-            </select>
+            <label className="block text-xs font-bold text-slate-700 mb-1">
+              Assigned Staff Members ({reassignStaffIds.length} selected)
+            </label>
+            <p className="text-[11px] text-slate-500 mb-2">
+              Select one or multiple staff members who will execute or collaborate on this task (or leave empty to unassign).
+            </p>
+            <MultiStaffSelect
+              staff={staffMembers.filter(s => !selectedTask || Number(s.branch_id) === Number(selectedTask.branch_id))}
+              selectedIds={reassignStaffIds}
+              onChange={setReassignStaffIds}
+              placeholder="Search and select staff members..."
+            />
           </div>
 
-          <div className="flex justify-end gap-2">
+          <div className="flex justify-end gap-2 pt-2">
             <button
               type="button"
               onClick={() => setShowReassignModal(false)}
@@ -637,7 +719,7 @@ export const Tasks: React.FC = () => {
               type="submit"
               className="px-5 py-2 text-xs font-bold bg-brand-600 text-white rounded-xl hover:bg-brand-700"
             >
-              Reassign
+              Update Assignments
             </button>
           </div>
         </form>
@@ -669,13 +751,23 @@ export const Tasks: React.FC = () => {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-3">
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">Branch *</label>
               <select
                 required
                 value={createForm.branchId}
-                onChange={e => setCreateForm({ ...createForm, branchId: e.target.value })}
+                onChange={e => {
+                  const newBranchId = e.target.value;
+                  setCreateForm({
+                    ...createForm,
+                    branchId: newBranchId,
+                    assignedStaffIds: createForm.assignedStaffIds.filter(id => {
+                      const st = staffMembers.find(s => s.id === id);
+                      return st && (!newBranchId || Number(st.branch_id) === Number(newBranchId));
+                    }),
+                  });
+                }}
                 className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2"
               >
                 <option value="">Select Branch</option>
@@ -686,19 +778,18 @@ export const Tasks: React.FC = () => {
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Assign Staff</label>
-              <select
-                value={createForm.assignedToId}
-                onChange={e => setCreateForm({ ...createForm, assignedToId: e.target.value })}
-                className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2"
-              >
-                <option value="">Leave Unassigned (New)</option>
-                {staffMembers
-                  .filter(s => !createForm.branchId || Number(s.branch_id) === Number(createForm.branchId))
-                  .map(s => (
-                    <option key={s.id} value={s.id}>{s.full_name} ({s.designation_name})</option>
-                  ))}
-              </select>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Assign Staff ({createForm.assignedStaffIds.length} selected)
+              </label>
+              <p className="text-[11px] text-slate-500 mb-1.5">
+                Assign one or multiple team members to this task.
+              </p>
+              <MultiStaffSelect
+                staff={staffMembers.filter(s => !createForm.branchId || Number(s.branch_id) === Number(createForm.branchId))}
+                selectedIds={createForm.assignedStaffIds}
+                onChange={ids => setCreateForm({ ...createForm, assignedStaffIds: ids })}
+                placeholder="Search staff to assign..."
+              />
             </div>
           </div>
 

@@ -188,7 +188,8 @@ router.get('/staff', authenticate, async (req: Request, res: Response) => {
   try {
     // 1. My Tasks counts
     const tasksRes = await db.query(
-      `SELECT status, due_date FROM tasks WHERE assigned_to_id = $1`,
+      `SELECT status, due_date FROM tasks t
+       WHERE (t.assigned_to_id = $1 OR EXISTS (SELECT 1 FROM task_staff ts WHERE ts.task_id = t.id AND ts.staff_id = $1))`,
       [staffId]
     );
 
@@ -233,7 +234,7 @@ router.get('/staff', authenticate, async (req: Request, res: Response) => {
       `SELECT t.*, b.name as branch_name
        FROM tasks t
        LEFT JOIN branches b ON t.branch_id = b.id
-       WHERE t.assigned_to_id = $1
+       WHERE (t.assigned_to_id = $1 OR EXISTS (SELECT 1 FROM task_staff ts WHERE ts.task_id = t.id AND ts.staff_id = $1))
        ORDER BY t.due_date ASC LIMIT 5`,
       [staffId]
     );

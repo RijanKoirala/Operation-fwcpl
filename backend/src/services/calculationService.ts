@@ -103,7 +103,8 @@ export const calculateStaffPerformance = async (
   for (const s of staffList) {
     // 1. Task metrics
     const taskRes = await db.query(
-      `SELECT status, due_date, completion_date FROM tasks t WHERE t.assigned_to_id = $1 ${dateClause}`,
+      `SELECT status, due_date, completion_date FROM tasks t
+       WHERE (t.assigned_to_id = $1 OR EXISTS (SELECT 1 FROM task_staff ts WHERE ts.task_id = t.id AND ts.staff_id = $1)) ${dateClause}`,
       [s.id]
     );
 

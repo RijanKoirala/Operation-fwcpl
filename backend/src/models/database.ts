@@ -574,10 +574,45 @@ class DatabaseManager {
         CREATE INDEX IF NOT EXISTS idx_info_branches_info ON information_branches(information_id);
         CREATE INDEX IF NOT EXISTS idx_info_branches_branch ON information_branches(branch_id);
         CREATE INDEX IF NOT EXISTS idx_info_reads_user ON information_reads(user_id, information_id);
+
+        CREATE TABLE IF NOT EXISTS task_staff (
+            id SERIAL PRIMARY KEY,
+            task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+            staff_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            assigned_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(task_id, staff_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_task_staff_task ON task_staff(task_id);
+        CREATE INDEX IF NOT EXISTS idx_task_staff_staff ON task_staff(staff_id);
+
+        CREATE TABLE IF NOT EXISTS connection_staff (
+            id SERIAL PRIMARY KEY,
+            connection_id INTEGER NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+            staff_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            assigned_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(connection_id, staff_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_conn_staff_conn ON connection_staff(connection_id);
+        CREATE INDEX IF NOT EXISTS idx_conn_staff_staff ON connection_staff(staff_id);
+
+        -- Backfill legacy single assignees to junction tables
+        INSERT INTO task_staff (task_id, staff_id)
+        SELECT id, assigned_to_id FROM tasks
+        WHERE assigned_to_id IS NOT NULL
+        ON CONFLICT (task_id, staff_id) DO NOTHING;
+
+        INSERT INTO connection_staff (connection_id, staff_id)
+        SELECT id, assigned_staff_id FROM connections
+        WHERE assigned_staff_id IS NOT NULL
+        ON CONFLICT (connection_id, staff_id) DO NOTHING;
       `);
-      console.log('✅ PostgreSQL NOC, RBAC, Goods, Discussions, POD, Electricity & Information tables verified & ready.');
+      console.log('✅ PostgreSQL NOC, RBAC, Goods, Discussions, POD, Electricity, Information & Multi-Staff tables verified & ready.');
     } catch (nocErr: any) {
-      console.error('❌ Failed to ensure NOC/RBAC/Electricity/Information tables in PostgreSQL:', nocErr.message);
+      console.error('❌ Failed to ensure NOC/RBAC/Electricity/Information/Multi-Staff tables in PostgreSQL:', nocErr.message);
     }
   }
 
@@ -1089,6 +1124,38 @@ class DatabaseManager {
     try { this.sqliteDb.exec("ALTER TABLE noc_incidents ADD COLUMN resolution_notes TEXT;"); } catch {}
     try { this.sqliteDb.exec("ALTER TABLE noc_incidents ADD COLUMN root_cause_analysis TEXT;"); } catch {}
     try { this.sqliteDb.exec("ALTER TABLE noc_incident_updates ADD COLUMN status_change TEXT;"); } catch {}
+
+    try {
+      this.sqliteDb.exec(`
+        CREATE TABLE IF NOT EXISTS task_staff (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+            staff_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            assigned_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            assigned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(task_id, staff_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_task_staff_task ON task_staff(task_id);
+        CREATE INDEX IF NOT EXISTS idx_task_staff_staff ON task_staff(staff_id);
+
+        CREATE TABLE IF NOT EXISTS connection_staff (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            connection_id INTEGER NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+            staff_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            assigned_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            assigned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(connection_id, staff_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_conn_staff_conn ON connection_staff(connection_id);
+        CREATE INDEX IF NOT EXISTS idx_conn_staff_staff ON connection_staff(staff_id);
+
+        INSERT OR IGNORE INTO task_staff (task_id, staff_id)
+        SELECT id, assigned_to_id FROM tasks WHERE assigned_to_id IS NOT NULL;
+
+        INSERT OR IGNORE INTO connection_staff (connection_id, staff_id)
+        SELECT id, assigned_staff_id FROM connections WHERE assigned_staff_id IS NOT NULL;
+      `);
+    } catch {}
 
     console.log('✅ SQLite schema applied.');
   }

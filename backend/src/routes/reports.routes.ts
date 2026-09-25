@@ -81,7 +81,7 @@ router.get('/:type', authenticate, requirePermission('reports.view'), async (req
         }
         if (staffId) {
           params.push(staffId);
-          whereClauses.push(`t.assigned_to_id = $${params.length}`);
+          whereClauses.push(`(t.assigned_to_id = $${params.length} OR EXISTS (SELECT 1 FROM task_staff ts WHERE ts.task_id = t.id AND ts.staff_id = $${params.length}))`);
         }
         if (status) {
           params.push(status);
@@ -102,7 +102,7 @@ router.get('/:type', authenticate, requirePermission('reports.view'), async (req
 
         const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
         const resTasks = await db.query(
-          `SELECT t.task_id as "Task ID", t.title as "Title", t.category as "Category",
+          `SELECT t.id, t.task_id as "Task ID", t.title as "Title", t.category as "Category",
                   b.name as "Branch", u.full_name as "Assigned To", t.priority as "Priority",
                   t.status as "Status", t.start_date as "Start Date", t.due_date as "Due Date",
                   t.completion_date as "Completion Date", t.completion_remarks as "Remarks"
@@ -113,7 +113,32 @@ router.get('/:type', authenticate, requirePermission('reports.view'), async (req
            ORDER BY t.created_at DESC`,
           params
         );
-        data = resTasks.rows;
+
+        if (resTasks.rows.length > 0) {
+          const tIds = resTasks.rows.map(r => r.id);
+          const phs = tIds.map((_, i) => `$${i + 1}`).join(',');
+          const sRes = await db.query(
+            `SELECT ts.task_id, u.full_name FROM task_staff ts JOIN users u ON ts.staff_id = u.id WHERE ts.task_id IN (${phs}) ORDER BY ts.id ASC`,
+            tIds
+          );
+          const sMap = new Map<number, string[]>();
+          for (const s of sRes.rows) {
+            const list = sMap.get(s.task_id) || [];
+            list.push(s.full_name);
+            sMap.set(s.task_id, list);
+          }
+          data = resTasks.rows.map(r => {
+            const staffList = sMap.get(r.id);
+            const copy = { ...r };
+            delete copy.id;
+            if (staffList && staffList.length > 0) {
+              copy['Assigned To'] = staffList.join(', ');
+            }
+            return copy;
+          });
+        } else {
+          data = [];
+        }
         break;
       }
 
@@ -123,6 +148,10 @@ router.get('/:type', authenticate, requirePermission('reports.view'), async (req
         if (branchId) {
           params.push(branchId);
           whereClauses.push(`c.branch_id = $${params.length}`);
+        }
+        if (staffId) {
+          params.push(staffId);
+          whereClauses.push(`(c.assigned_staff_id = $${params.length} OR EXISTS (SELECT 1 FROM connection_staff cs WHERE cs.connection_id = c.id AND cs.staff_id = $${params.length}))`);
         }
         if (status) {
           params.push(status);
@@ -139,7 +168,7 @@ router.get('/:type', authenticate, requirePermission('reports.view'), async (req
 
         const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
         const resConn = await db.query(
-          `SELECT c.connection_id as "Connection ID", c.customer_name as "Customer", c.phone as "Phone",
+          `SELECT c.id, c.connection_id as "Connection ID", c.customer_name as "Customer", c.phone as "Phone",
                   b.name as "Branch", u.full_name as "Assigned Staff", c.connection_type as "Type",
                   c.package_plan as "Plan", c.status as "Status", c.request_date as "Request Date",
                   c.activation_date as "Activation Date"
@@ -150,7 +179,32 @@ router.get('/:type', authenticate, requirePermission('reports.view'), async (req
            ORDER BY c.request_date DESC`,
           params
         );
-        data = resConn.rows;
+
+        if (resConn.rows.length > 0) {
+          const cIds = resConn.rows.map(r => r.id);
+          const phs = cIds.map((_, i) => `$${i + 1}`).join(',');
+          const sRes = await db.query(
+            `SELECT cs.connection_id, u.full_name FROM connection_staff cs JOIN users u ON cs.staff_id = u.id WHERE cs.connection_id IN (${phs}) ORDER BY cs.id ASC`,
+            cIds
+          );
+          const sMap = new Map<number, string[]>();
+          for (const s of sRes.rows) {
+            const list = sMap.get(s.connection_id) || [];
+            list.push(s.full_name);
+            sMap.set(s.connection_id, list);
+          }
+          data = resConn.rows.map(r => {
+            const staffList = sMap.get(r.id);
+            const copy = { ...r };
+            delete copy.id;
+            if (staffList && staffList.length > 0) {
+              copy['Assigned Staff'] = staffList.join(', ');
+            }
+            return copy;
+          });
+        } else {
+          data = [];
+        }
         break;
       }
 

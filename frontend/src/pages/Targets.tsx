@@ -10,6 +10,7 @@ import {
   TrendingUp, CheckCircle, AlertCircle, Edit3, Building2, User as UserIcon,
   ExternalLink, Layers, Sparkles, Phone, MapPin, Calendar, CheckCircle2
 } from 'lucide-react';
+import { AssignedStaffPills } from '../components/common/MultiStaffSelect';
 
 export const Targets: React.FC = () => {
   const { user } = useAuth();
@@ -722,7 +723,9 @@ export const Targets: React.FC = () => {
                       <td className="px-3 py-2.5 text-gray-700 font-semibold">
                         {c.completion_date ? new Date(c.completion_date).toLocaleDateString() : 'N/A'}
                       </td>
-                      <td className="px-3 py-2.5 text-gray-500">{c.assigned_staff_name || 'Unassigned'}</td>
+                      <td className="px-3 py-2.5 text-gray-500">
+                        <AssignedStaffPills staff={c.assigned_staff} fallbackName={c.assigned_staff_name} />
+                      </td>
                       <td className="px-3 py-2.5">
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
                           <CheckCircle2 className="w-3 h-3" /> Completed

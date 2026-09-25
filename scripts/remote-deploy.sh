@@ -71,13 +71,20 @@ seed().catch(err => {
 
 # 6. Verify Tables Existence in PostgreSQL
 echo ""
-echo "🔍 Verifying newly added database tables..."
+echo "🔍 Verifying newly added database tables & multi-staff junction tables..."
 docker exec fwcpl-db psql -U fwcpl_admin -d fwcpl_operations -c "
 SELECT table_name 
 FROM information_schema.tables 
 WHERE table_schema = 'public' 
-  AND table_name IN ('electricity_meters', 'electricity_readings', 'electricity_payments', 'information', 'information_branches', 'information_reads')
+  AND table_name IN ('electricity_meters', 'electricity_readings', 'electricity_payments', 'information', 'information_branches', 'information_reads', 'task_staff', 'connection_staff')
 ORDER BY table_name;
+"
+
+echo "📊 Verifying staff assignments backfill status..."
+docker exec fwcpl-db psql -U fwcpl_admin -d fwcpl_operations -c "
+SELECT 
+  (SELECT COUNT(*) FROM task_staff) AS task_staff_count,
+  (SELECT COUNT(*) FROM connection_staff) AS connection_staff_count;
 "
 
 # 7. Test Login API

@@ -19,6 +19,7 @@ import { Connection, ConnectionMetrics } from '../types';
 import { StatusBadge } from '../components/common/Badge';
 import { StatCard } from '../components/common/StatCard';
 import { Modal } from '../components/common/Modal';
+import { MultiStaffSelect, AssignedStaffPills } from '../components/common/MultiStaffSelect';
 
 export const Connections: React.FC = () => {
   const { user } = useAuth();
@@ -28,6 +29,7 @@ export const Connections: React.FC = () => {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [branchFilter, setBranchFilter] = useState('');
+  const [staffFilter, setStaffFilter] = useState('');
   const [branches, setBranches] = useState<any[]>([]);
   const [staffMembers, setStaffMembers] = useState<any[]>([]);
 
@@ -37,6 +39,7 @@ export const Connections: React.FC = () => {
   const [updateStatus, setUpdateStatus] = useState('');
   const [updateRemarks, setUpdateRemarks] = useState('');
   const [updateCompletionDate, setUpdateCompletionDate] = useState('');
+  const [updateStaffIds, setUpdateStaffIds] = useState<number[]>([]);
   const [targetContribution, setTargetContribution] = useState<any>(null);
   const [loadingContribution, setLoadingContribution] = useState(false);
 
@@ -46,7 +49,7 @@ export const Connections: React.FC = () => {
     email: '',
     address: '',
     branchId: user?.branchId || '',
-    assignedStaffId: '',
+    assignedStaffIds: [] as number[],
     connectionType: 'Fiber Internet',
     packagePlan: 'Home Super 200 Mbps',
     requestDate: new Date().toISOString().split('T')[0],
@@ -68,11 +71,13 @@ export const Connections: React.FC = () => {
   const fetchConnections = async () => {
     setLoading(true);
     try {
-      const q = new URLSearchParams({
+      const qObj: Record<string, string> = {
         search,
         status: statusFilter,
         branchId: branchFilter,
-      }).toString();
+      };
+      if (staffFilter) qObj.staffId = staffFilter;
+      const q = new URLSearchParams(qObj).toString();
 
       const [cRes, mRes] = await Promise.all([
         api.get(`/connections?${q}`),
@@ -101,7 +106,7 @@ export const Connections: React.FC = () => {
 
   useEffect(() => {
     fetchConnections();
-  }, [search, statusFilter, branchFilter]);
+  }, [search, statusFilter, branchFilter, staffFilter]);
 
   useEffect(() => {
     if (selectedConn && (selectedConn.status === 'Completed' || updateStatus === 'Completed')) {
@@ -136,7 +141,7 @@ export const Connections: React.FC = () => {
           email: '',
           address: '',
           branchId: user?.branchId || '',
-          assignedStaffId: '',
+          assignedStaffIds: [],
           connectionType: 'Fiber Internet',
           packagePlan: 'Home Super 200 Mbps',
           requestDate: new Date().toISOString().split('T')[0],
@@ -154,7 +159,11 @@ export const Connections: React.FC = () => {
     if (!selectedConn) return;
 
     try {
-      const payload: any = { status: updateStatus, remarks: updateRemarks };
+      const payload: any = {
+        status: updateStatus,
+        remarks: updateRemarks,
+        assignedStaffIds: updateStaffIds,
+      };
       if (updateStatus === 'Installed') {
         payload.installationDate = new Date().toISOString().split('T')[0];
       } else if (updateStatus === 'Activated') {
@@ -287,6 +296,19 @@ export const Connections: React.FC = () => {
               ))}
             </select>
           )}
+
+          <select
+            value={staffFilter}
+            onChange={e => setStaffFilter(e.target.value)}
+            className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-xl px-3 py-2 font-medium max-w-[150px] truncate"
+          >
+            <option value="">All Staff</option>
+            {staffMembers
+              .filter(s => !branchFilter || Number(s.branch_id) === Number(branchFilter))
+              .map(s => (
+                <option key={s.id} value={s.id}>{s.full_name}</option>
+              ))}
+          </select>
         </div>
       </div>
 
@@ -318,7 +340,9 @@ export const Connections: React.FC = () => {
                   <span className="font-medium text-slate-800 text-xs block">{c.package_plan}</span>
                   <span className="text-[11px] text-slate-400">{c.connection_type}</span>
                 </td>
-                <td className="py-3.5 px-4 font-medium text-slate-700">{c.assigned_staff_name || 'Unassigned'}</td>
+                <td className="py-3.5 px-4 font-medium text-slate-700">
+                  <AssignedStaffPills staff={c.assigned_staff} fallbackName={c.assigned_staff_name} />
+                </td>
                 <td className="py-3.5 px-4 text-xs text-slate-500">{c.request_date}</td>
                 <td className="py-3.5 px-4">
                   <div className="flex flex-col gap-1 items-start">
@@ -337,6 +361,10 @@ export const Connections: React.FC = () => {
                       setUpdateStatus(c.status);
                       setUpdateRemarks(c.remarks || '');
                       setUpdateCompletionDate(c.completion_date || (c.status === 'Completed' ? new Date().toISOString().split('T')[0] : ''));
+                      const currentIds = (c.assigned_staff && c.assigned_staff.length > 0)
+                        ? c.assigned_staff.map(s => (s.staff_id || s.id) as number).filter(Boolean)
+                        : (c.assigned_staff_id ? [c.assigned_staff_id] : []);
+                      setUpdateStaffIds(currentIds);
                       setShowStatusModal(true);
                     }}
                     className="text-xs font-bold text-brand-600 hover:bg-brand-50 px-2.5 py-1 rounded-lg border border-brand-200 transition-colors"
@@ -470,6 +498,21 @@ export const Connections: React.FC = () => {
             )}
 
             <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Assigned Technicians / Staff ({updateStaffIds.length} assigned)
+              </label>
+              <p className="text-[11px] text-slate-500 mb-1.5">
+                Assign one or more technicians for survey, cabling, splicing, or activation.
+              </p>
+              <MultiStaffSelect
+                staff={staffMembers.filter(s => Number(s.branch_id) === Number(selectedConn.branch_id))}
+                selectedIds={updateStaffIds}
+                onChange={setUpdateStaffIds}
+                placeholder="Assign technicians..."
+              />
+            </div>
+
+            <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">Remarks / Survey & Optical Notes</label>
               <textarea
                 rows={3}
@@ -543,13 +586,23 @@ export const Connections: React.FC = () => {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-3">
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">Branch *</label>
               <select
                 required
                 value={createForm.branchId}
-                onChange={e => setCreateForm({ ...createForm, branchId: e.target.value })}
+                onChange={e => {
+                  const newBranchId = e.target.value;
+                  setCreateForm({
+                    ...createForm,
+                    branchId: newBranchId,
+                    assignedStaffIds: createForm.assignedStaffIds.filter(id => {
+                      const st = staffMembers.find(s => s.id === id);
+                      return st && (!newBranchId || Number(st.branch_id) === Number(newBranchId));
+                    }),
+                  });
+                }}
                 className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2"
               >
                 <option value="">Select Branch</option>
@@ -560,19 +613,18 @@ export const Connections: React.FC = () => {
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Assigned Technician</label>
-              <select
-                value={createForm.assignedStaffId}
-                onChange={e => setCreateForm({ ...createForm, assignedStaffId: e.target.value })}
-                className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2"
-              >
-                <option value="">Leave Unassigned</option>
-                {staffMembers
-                  .filter(s => !createForm.branchId || Number(s.branch_id) === Number(createForm.branchId))
-                  .map(s => (
-                    <option key={s.id} value={s.id}>{s.full_name} ({s.designation_name})</option>
-                  ))}
-              </select>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Assigned Technicians ({createForm.assignedStaffIds.length} selected)
+              </label>
+              <p className="text-[11px] text-slate-500 mb-1.5">
+                Assign one or multiple technicians to handle this connection.
+              </p>
+              <MultiStaffSelect
+                staff={staffMembers.filter(s => !createForm.branchId || Number(s.branch_id) === Number(createForm.branchId))}
+                selectedIds={createForm.assignedStaffIds}
+                onChange={ids => setCreateForm({ ...createForm, assignedStaffIds: ids })}
+                placeholder="Search technicians to assign..."
+              />
             </div>
           </div>
 

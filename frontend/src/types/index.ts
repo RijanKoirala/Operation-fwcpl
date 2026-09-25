@@ -159,6 +159,17 @@ export interface Department {
 export type TaskPriority = 'Low' | 'Medium' | 'High' | 'Urgent';
 export type TaskStatus = 'New' | 'Assigned' | 'Acknowledged' | 'In Progress' | 'Completed' | 'Rejected' | 'Cancelled' | 'Closed' | 'Overdue';
 
+export interface AssignedStaffMember {
+  id?: number;
+  staff_id?: number;
+  full_name: string;
+  employee_id?: string | null;
+  phone?: string | null;
+  role?: string | null;
+  designation_name?: string | null;
+  is_primary?: boolean;
+}
+
 export interface Task {
   id: number;
   task_id: string;
@@ -170,6 +181,7 @@ export interface Task {
   branch_code?: string;
   assigned_to_id?: number | null;
   assigned_to_name?: string;
+  assigned_staff?: AssignedStaffMember[];
   created_by_id?: number | null;
   created_by_name?: string;
   priority: TaskPriority;
@@ -232,12 +244,14 @@ export interface Connection {
   branch_name?: string;
   assigned_staff_id?: number | null;
   assigned_staff_name?: string;
+  assigned_staff?: AssignedStaffMember[];
   connection_type: string;
   package_plan: string;
   request_date: string;
   site_survey_date?: string | null;
   installation_date?: string | null;
   activation_date?: string | null;
+  completion_date?: string | null;
   status: ConnectionStatus;
   remarks?: string;
 }
