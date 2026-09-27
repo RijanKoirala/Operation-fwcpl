@@ -10,7 +10,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_DIR"
 
-TARGET_HOST="fwcpl@103.166.172.36"
+TARGET_HOST="${1:-fwcpl@103.166.172.36}"
 REMOTE_DIR="~/operation-fwcpl"
 
 echo "=================================================================="
@@ -24,7 +24,7 @@ echo "=================================================================="
 echo "📦 1/4 Checking and committing local git changes..."
 git add .
 if ! git diff-index --quiet HEAD --; then
-    git commit -m "Support multiple staff assignments for Tasks and New Connections with automated backfill, target sync integrity, and updated UI" || true
+    git commit -m "Support multiple staff assignments and enforce Target and PODs RBAC permissions" || true
     echo "  ✔ Local changes committed to git."
     echo "  🚀 Pushing to GitHub (origin main)..."
     git push origin main || echo "  ℹ Git push skipped or failed (offline / auth); continuing with direct deployment."

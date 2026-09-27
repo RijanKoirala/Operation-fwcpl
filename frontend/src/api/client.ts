@@ -164,6 +164,8 @@ export const api = {
   targets: {
     getAll: (params?: any) => api.get(`/targets${toQueryString(params)}`),
     create: (data: any) => api.post('/targets', data),
+    update: (id: number, data: any) => api.put(`/targets/${id}`, data),
+    delete: (id: number) => api.delete(`/targets/${id}`),
     updateProgress: (id: number, achieved_value: number) =>
       api.put(`/targets/${id}/progress`, { achieved_value }),
     getContributingConnections: (id: number) =>

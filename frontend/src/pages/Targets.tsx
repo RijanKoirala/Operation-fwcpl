@@ -8,12 +8,12 @@ import { ProgressBar } from '../components/common/ProgressBar';
 import { 
   Target as TargetIcon, Plus, Search, Filter, 
   TrendingUp, CheckCircle, AlertCircle, Edit3, Building2, User as UserIcon,
-  ExternalLink, Layers, Sparkles, Phone, MapPin, Calendar, CheckCircle2
+  ExternalLink, Layers, Sparkles, Phone, MapPin, Calendar, CheckCircle2, Trash2
 } from 'lucide-react';
 import { AssignedStaffPills } from '../components/common/MultiStaffSelect';
 
 export const Targets: React.FC = () => {
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
   const [targets, setTargets] = useState<any[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [staffList, setStaffList] = useState<User[]>([]);
@@ -153,8 +153,48 @@ export const Targets: React.FC = () => {
     }
   };
 
-  const userRole = (user?.role || '').toUpperCase().replace(/\s+/g, '_');
-  const canManage = userRole === 'SUPER_ADMIN' || userRole === 'MANAGEMENT' || userRole === 'BRANCH_MANAGER';
+  const handleDeleteTarget = async (id: number, name: string) => {
+    if (!window.confirm(`Are you sure you want to delete target "${name}"? This action cannot be undone.`)) return;
+    try {
+      const res = await api.targets.delete(id);
+      if (res.success) {
+        fetchTargets();
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete target');
+    }
+  };
+
+  const roleUpper = (user?.role || '').toUpperCase().replace(/\s+/g, '_');
+  const roleNameUpper = ((user as any)?.roleName || (user as any)?.role_name || '').toUpperCase().replace(/\s+/g, '_');
+  const isSuperAdmin = roleUpper === 'SUPER_ADMIN' || roleNameUpper === 'SUPER_ADMIN' || user?.username === 'superadmin';
+
+  const deptCode = (user?.departmentCode || (user as any)?.department_code || '').toUpperCase();
+  const deptName = ((user as any)?.departmentName || (user as any)?.department_name || (user as any)?.department || '').toUpperCase();
+
+  const isOperation = !isSuperAdmin && (
+    deptCode === 'OPERATION' ||
+    deptName === 'OPERATION' ||
+    roleNameUpper === 'OPERATION_MANAGER' ||
+    roleNameUpper === 'OPERATION'
+  );
+
+  const isBranchUser = !isSuperAdmin && (
+    deptCode === 'BRANCHES' ||
+    deptName === 'BRANCHES' ||
+    roleUpper === 'BRANCH_MANAGER' ||
+    roleNameUpper === 'BRANCH_MANAGER' ||
+    roleUpper === 'STAFF' ||
+    (Boolean(user?.branchId || (user as any)?.branch_id) && !isOperation)
+  );
+
+  // Target permissions:
+  // ONLY Super Admin and Operation users with targets.create can create targets.
+  // Branch users can NEVER create targets.
+  const canCreateTarget = (isSuperAdmin || (isOperation && !isBranchUser)) && hasPermission('targets.create');
+  const canEditTarget = (isSuperAdmin || (isOperation && !isBranchUser)) && hasPermission('targets.edit');
+  const canDeleteTarget = (isSuperAdmin || (isOperation && !isBranchUser)) && hasPermission('targets.delete');
+  const canUpdateProgress = hasPermission('targets.edit');
 
   const filtered = targets.filter(t => {
     const title = (t.title || t.target_name || '').toLowerCase();
@@ -184,7 +224,7 @@ export const Targets: React.FC = () => {
             Set, track, and evaluate operational goals for branches and individual personnel.
           </p>
         </div>
-        {canManage && (
+        {canCreateTarget && (
           <button
             onClick={() => setShowCreateModal(true)}
             className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-sm text-sm font-semibold transition"
@@ -368,7 +408,7 @@ export const Targets: React.FC = () => {
                   </div>
                 </div>
 
-                {canManage && (
+                {(canEditTarget || canDeleteTarget || canUpdateProgress || isNC) && (
                   <div className="bg-gray-50 px-5 py-3 border-t border-gray-100 flex items-center justify-between gap-2">
                     {isNC ? (
                       <button
@@ -380,16 +420,29 @@ export const Targets: React.FC = () => {
                     ) : (
                       <div />
                     )}
-                    <button
-                      onClick={() => {
-                        setSelectedTarget(t);
-                        setUpdateAchieved(Number(t.achieved_value) || 0);
-                        setShowUpdateModal(true);
-                      }}
-                      className="px-3 py-1.5 bg-white border border-gray-200 hover:bg-indigo-50 hover:border-indigo-200 text-indigo-600 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 shadow-sm"
-                    >
-                      <Edit3 className="w-3.5 h-3.5" /> {isNC ? 'Target Info' : 'Update Progress'}
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      {((isNC && canEditTarget) || (!isNC && canUpdateProgress)) && (
+                        <button
+                          onClick={() => {
+                            setSelectedTarget(t);
+                            setUpdateAchieved(Number(t.achieved_value) || 0);
+                            setShowUpdateModal(true);
+                          }}
+                          className="px-3 py-1.5 bg-white border border-gray-200 hover:bg-indigo-50 hover:border-indigo-200 text-indigo-600 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 shadow-sm"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" /> {isNC ? 'Target Info' : 'Update Progress'}
+                        </button>
+                      )}
+                      {canDeleteTarget && (
+                        <button
+                          onClick={() => handleDeleteTarget(t.id, targetTitle)}
+                          className="p-1.5 rounded-lg border border-gray-200 bg-white text-gray-400 hover:text-rose-600 hover:border-rose-200 hover:bg-rose-50 transition cursor-pointer shadow-sm"
+                          title="Delete Target"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
@@ -399,11 +452,12 @@ export const Targets: React.FC = () => {
       )}
 
       {/* Set Target Modal */}
-      <Modal
-        isOpen={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
-        title="Set Operational Target / KPI"
-      >
+      {canCreateTarget && (
+        <Modal
+          isOpen={showCreateModal}
+          onClose={() => setShowCreateModal(false)}
+          title="Set Operational Target / KPI"
+        >
         <form onSubmit={handleCreate} className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-gray-700 mb-1">Target Title *</label>
@@ -546,6 +600,7 @@ export const Targets: React.FC = () => {
           </div>
         </form>
       </Modal>
+      )}
 
       {/* Update Progress Modal */}
       {selectedTarget && (

@@ -759,4 +759,158 @@ router.get('/:id/history', authenticate, requirePermission('pods.history.view'),
   }
 });
 
+// ============================================================
+// 11. GET /api/pods/history - Global Audit trail for all PODs
+// ============================================================
+router.get('/history', authenticate, requirePermission('pods.history.view'), async (req: Request, res: Response) => {
+  try {
+    const historyRes = await db.query(
+      `SELECT 
+        ph.*,
+        p.name as pod_name,
+        u.full_name as user_name,
+        u.username as user_username,
+        u.role as user_role
+       FROM pod_history ph
+       LEFT JOIN pods p ON ph.pod_id = p.id
+       LEFT JOIN users u ON ph.user_id = u.id
+       ORDER BY ph.created_at DESC, ph.id DESC
+       LIMIT 100`
+    );
+
+    return res.json({
+      success: true,
+      history: historyRes.rows,
+    });
+  } catch (err: any) {
+    console.error('Error in GET /api/pods/history:', err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ============================================================
+// 12. PUT /api/pods/items/:itemId - Direct edit item by itemId
+// ============================================================
+router.put('/items/:itemId', authenticate, requirePermission('pods.items.edit'), async (req: Request, res: Response) => {
+  try {
+    const itemId = parseInt(req.params.itemId, 10);
+    if (isNaN(itemId)) return res.status(400).json({ success: false, message: 'Invalid Item ID.' });
+
+    const itemRes = await db.query('SELECT * FROM pod_items WHERE id = $1', [itemId]);
+    if (itemRes.rowCount === 0) {
+      return res.status(404).json({ success: false, message: 'Item not found.' });
+    }
+    const current = itemRes.rows[0];
+    const podId = current.pod_id;
+
+    const { item_name, quantity, unit, description, status, remarks } = req.body;
+    const targetName = item_name !== undefined ? item_name.trim() : current.item_name;
+    if (!targetName) return res.status(400).json({ success: false, message: 'Item name cannot be empty.' });
+
+    let targetQty = current.quantity;
+    if (quantity !== undefined) {
+      const q = parseFloat(String(quantity));
+      if (isNaN(q) || q < 0) return res.status(400).json({ success: false, message: 'Invalid quantity.' });
+      targetQty = q;
+    }
+
+    const targetUnit = unit !== undefined ? (unit ? unit.trim() : 'PCS') : current.unit;
+    const targetStatus = status !== undefined ? status : current.status;
+    const targetDesc = description !== undefined ? (description ? description.trim() : null) : current.description;
+    const targetRemarks = remarks !== undefined ? (remarks ? remarks.trim() : null) : current.remarks;
+
+    const updateRes = await db.query(
+      `UPDATE pod_items SET
+        item_name = $1,
+        quantity = $2,
+        unit = $3,
+        description = $4,
+        status = $5,
+        remarks = $6,
+        updated_at = CURRENT_TIMESTAMP
+       WHERE id = $7
+       RETURNING *`,
+      [targetName, targetQty, targetUnit, targetDesc, targetStatus, targetRemarks, itemId]
+    );
+
+    const updatedItem = updateRes.rows[0];
+
+    let changeDetail = '';
+    if (current.quantity !== updatedItem.quantity || current.unit !== updatedItem.unit) {
+      changeDetail = `${updatedItem.item_name} quantity changed from ${current.quantity} ${current.unit} to ${updatedItem.quantity} ${updatedItem.unit}`;
+    } else if (current.status !== updatedItem.status) {
+      changeDetail = `${updatedItem.item_name} status changed to ${updatedItem.status}`;
+    } else {
+      changeDetail = `${updatedItem.item_name} details updated`;
+    }
+
+    await db.query(
+      `INSERT INTO pod_history (pod_id, user_id, action, details, created_at)
+       VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)`,
+      [podId, req.user!.id, 'ITEM_UPDATED', changeDetail]
+    );
+
+    await logActivity({
+      userId: req.user!.id,
+      action: 'UPDATE_POD_ITEM',
+      module: 'PODs',
+      recordId: String(itemId),
+      details: changeDetail,
+      req,
+    });
+
+    return res.json({
+      success: true,
+      message: 'Item updated successfully.',
+      item: updatedItem,
+    });
+  } catch (err: any) {
+    console.error('Error in PUT /api/pods/items/:itemId:', err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ============================================================
+// 13. DELETE /api/pods/items/:itemId - Direct delete item by itemId
+// ============================================================
+router.delete('/items/:itemId', authenticate, requirePermission('pods.items.delete'), async (req: Request, res: Response) => {
+  try {
+    const itemId = parseInt(req.params.itemId, 10);
+    if (isNaN(itemId)) return res.status(400).json({ success: false, message: 'Invalid Item ID.' });
+
+    const itemRes = await db.query('SELECT * FROM pod_items WHERE id = $1', [itemId]);
+    if (itemRes.rowCount === 0) {
+      return res.status(404).json({ success: false, message: 'Item not found.' });
+    }
+    const current = itemRes.rows[0];
+    const podId = current.pod_id;
+
+    await db.query('DELETE FROM pod_items WHERE id = $1', [itemId]);
+
+    const historyDetail = `${current.item_name} (${current.quantity} ${current.unit}) removed from POD`;
+    await db.query(
+      `INSERT INTO pod_history (pod_id, user_id, action, details, created_at)
+       VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)`,
+      [podId, req.user!.id, 'ITEM_DELETED', historyDetail]
+    );
+
+    await logActivity({
+      userId: req.user!.id,
+      action: 'DELETE_POD_ITEM',
+      module: 'PODs',
+      recordId: String(itemId),
+      details: historyDetail,
+      req,
+    });
+
+    return res.json({
+      success: true,
+      message: `Item "${current.item_name}" removed successfully.`,
+    });
+  } catch (err: any) {
+    console.error('Error in DELETE /api/pods/items/:itemId:', err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 export default router;

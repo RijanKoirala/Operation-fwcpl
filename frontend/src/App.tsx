@@ -116,11 +116,11 @@ export const App: React.FC = () => {
       tickets: 'tickets',
       noc: 'noc',
       discussions: 'discussions',
-      pods: 'pods',
+      pods: 'pods.view',
       connections: 'connections',
       followups: 'followups',
       instructions: 'instructions',
-      targets: 'targets',
+      targets: 'targets.view',
       reports: 'reports',
       administration: 'admins',
       admins: 'admins',
@@ -137,7 +137,6 @@ export const App: React.FC = () => {
     if (
       requiredPerm &&
       requiredPerm !== 'discussions' &&
-      requiredPerm !== 'pods' &&
       requiredPerm !== 'electricity' &&
       requiredPerm !== 'information' &&
       !hasPermission(requiredPerm)

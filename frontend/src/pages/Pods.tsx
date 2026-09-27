@@ -127,14 +127,35 @@ export const Pods: React.FC<PodsProps> = ({ onNavigate, initialPodId }) => {
   const [detectingGps, setDetectingGps] = useState(false);
 
   // Permissions check
+  const canViewPod = hasPermission('pods.view');
   const canCreatePod = hasPermission('pods.create');
   const canEditPod = hasPermission('pods.edit');
   const canDeletePod = hasPermission('pods.delete');
-  const canViewItems = hasPermission('pods.items.view');
+  const canViewItems = hasPermission('pods.items.view') || hasPermission('pods.view');
   const canCreateItem = hasPermission('pods.items.create');
   const canEditItem = hasPermission('pods.items.edit');
   const canDeleteItem = hasPermission('pods.items.delete');
   const canViewHistory = hasPermission('pods.history.view');
+
+  if (!canViewPod) {
+    return (
+      <div className="max-w-md mx-auto mt-20 p-8 bg-white rounded-2xl border border-slate-200 shadow-sm text-center">
+        <div className="w-12 h-12 bg-rose-50 text-rose-600 rounded-2xl flex items-center justify-center mx-auto mb-4 font-bold text-xl">
+          🔒
+        </div>
+        <h3 className="text-base font-bold text-slate-900 mb-1">Access Restricted</h3>
+        <p className="text-xs text-slate-500 mb-6 leading-relaxed">
+          You do not have permission to access PODs. Please contact your Super Administrator.
+        </p>
+        <button
+          onClick={() => onNavigate?.('dashboard')}
+          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer"
+        >
+          Back to Dashboard
+        </button>
+      </div>
+    );
+  }
 
   // Fetch PODs list
   const fetchPods = async () => {
@@ -321,6 +342,23 @@ export const Pods: React.FC<PodsProps> = ({ onNavigate, initialPodId }) => {
       alert(err.message || 'Failed to update POD / DC');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  // Delete POD
+  const handleDeletePod = async (podId: number, podName: string) => {
+    if (!window.confirm(`Are you sure you want to delete POD / DC "${podName}"? This action cannot be undone.`)) return;
+    try {
+      const res = await api.pods.delete(podId);
+      if (res.success) {
+        if (selectedPodId === podId) {
+          setSelectedPodId(null);
+          setSelectedPod(null);
+        }
+        fetchPods();
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete POD');
     }
   };
 
@@ -567,6 +605,16 @@ export const Pods: React.FC<PodsProps> = ({ onNavigate, initialPodId }) => {
               >
                 <Edit className="w-3.5 h-3.5" />
                 <span>Edit POD / DC</span>
+              </button>
+            )}
+
+            {canDeletePod && (
+              <button
+                onClick={() => handleDeletePod(selectedPod.id, selectedPod.name)}
+                className="px-4 py-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 text-xs font-bold rounded-xl shadow-xs transition flex items-center gap-2 cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete POD</span>
               </button>
             )}
           </div>
@@ -2023,6 +2071,15 @@ export const Pods: React.FC<PodsProps> = ({ onNavigate, initialPodId }) => {
                               title="Edit POD"
                             >
                               <Edit className="w-4 h-4" />
+                            </button>
+                          )}
+                          {canDeletePod && (
+                            <button
+                              onClick={() => handleDeletePod(pod.id, pod.name)}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                              title="Delete POD"
+                            >
+                              <Trash2 className="w-4 h-4" />
                             </button>
                           )}
                         </div>

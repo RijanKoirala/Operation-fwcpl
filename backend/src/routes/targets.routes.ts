@@ -102,7 +102,41 @@ router.get('/:id/connections', authenticate, requirePermission('targets.view'), 
 });
 
 // POST /api/targets
-router.post('/', authenticate, requirePermission('targets.create'), async (req: Request, res: Response) => {
+router.post('/', authenticate, async (req: Request, res: Response) => {
+  const isSuperAdmin =
+    req.user?.role === 'SUPER_ADMIN' ||
+    req.user?.roleName === 'Super Admin' ||
+    (req.user?.role && req.user.role.toUpperCase().replace(/\s+/g, '_') === 'SUPER_ADMIN') ||
+    req.user?.username === 'superadmin';
+
+  const deptCode = (req.user?.departmentCode || req.user?.department_code || '').toUpperCase();
+  const deptName = (req.user?.departmentName || '').toUpperCase();
+  const roleName = (req.user?.roleName || req.user?.role || '').toUpperCase().replace(/\s+/g, '_');
+
+  const isBranchUser = !isSuperAdmin && (
+    deptCode === 'BRANCHES' ||
+    deptName === 'BRANCHES' ||
+    roleName === 'BRANCH_MANAGER' ||
+    roleName === 'STAFF' ||
+    (Boolean(req.user?.branchId || req.user?.branch_id) && deptCode !== 'OPERATION')
+  );
+
+  const isOperation = !isBranchUser && (
+    deptCode === 'OPERATION' ||
+    deptName === 'OPERATION' ||
+    roleName === 'OPERATION_MANAGER' ||
+    roleName === 'OPERATION'
+  );
+
+  const hasTargetCreate = Boolean(req.user?.permissions && req.user.permissions['targets.create'] === true);
+
+  if (!isSuperAdmin && (!isOperation || isBranchUser || !hasTargetCreate)) {
+    return res.status(403).json({
+      success: false,
+      message: 'You do not have permission to create targets. Only Superadmin and Operation team can create targets.',
+    });
+  }
+
   const {
     targetName,
     category,
@@ -233,6 +267,31 @@ router.put('/:id/progress', authenticate, requirePermission('targets.edit'), asy
 
 // PUT /api/targets/:id - Update target and achievement
 router.put('/:id', authenticate, requirePermission('targets.edit'), async (req: Request, res: Response) => {
+  const isSuperAdmin =
+    req.user?.role === 'SUPER_ADMIN' ||
+    req.user?.roleName === 'Super Admin' ||
+    (req.user?.role && req.user.role.toUpperCase().replace(/\s+/g, '_') === 'SUPER_ADMIN') ||
+    req.user?.username === 'superadmin';
+
+  const deptCode = (req.user?.departmentCode || req.user?.department_code || '').toUpperCase();
+  const deptName = (req.user?.departmentName || '').toUpperCase();
+  const roleName = (req.user?.roleName || req.user?.role || '').toUpperCase().replace(/\s+/g, '_');
+
+  const isBranchUser = !isSuperAdmin && (
+    deptCode === 'BRANCHES' ||
+    deptName === 'BRANCHES' ||
+    roleName === 'BRANCH_MANAGER' ||
+    roleName === 'STAFF' ||
+    (Boolean(req.user?.branchId || req.user?.branch_id) && deptCode !== 'OPERATION')
+  );
+
+  if (!isSuperAdmin && isBranchUser) {
+    return res.status(403).json({
+      success: false,
+      message: 'You do not have permission to edit targets. Branch users cannot edit target configurations.',
+    });
+  }
+
   const targetId = parseInt(req.params.id, 10);
   const {
     targetName,
@@ -310,6 +369,31 @@ router.put('/:id', authenticate, requirePermission('targets.edit'), async (req: 
 
 // DELETE /api/targets/:id
 router.delete('/:id', authenticate, requirePermission('targets.delete'), async (req: Request, res: Response) => {
+  const isSuperAdmin =
+    req.user?.role === 'SUPER_ADMIN' ||
+    req.user?.roleName === 'Super Admin' ||
+    (req.user?.role && req.user.role.toUpperCase().replace(/\s+/g, '_') === 'SUPER_ADMIN') ||
+    req.user?.username === 'superadmin';
+
+  const deptCode = (req.user?.departmentCode || req.user?.department_code || '').toUpperCase();
+  const deptName = (req.user?.departmentName || '').toUpperCase();
+  const roleName = (req.user?.roleName || req.user?.role || '').toUpperCase().replace(/\s+/g, '_');
+
+  const isBranchUser = !isSuperAdmin && (
+    deptCode === 'BRANCHES' ||
+    deptName === 'BRANCHES' ||
+    roleName === 'BRANCH_MANAGER' ||
+    roleName === 'STAFF' ||
+    (Boolean(req.user?.branchId || req.user?.branch_id) && deptCode !== 'OPERATION')
+  );
+
+  if (!isSuperAdmin && isBranchUser) {
+    return res.status(403).json({
+      success: false,
+      message: 'You do not have permission to delete targets. Branch users cannot delete targets.',
+    });
+  }
+
   const targetId = parseInt(req.params.id, 10);
 
   try {

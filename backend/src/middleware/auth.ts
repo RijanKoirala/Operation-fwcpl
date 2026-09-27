@@ -247,7 +247,8 @@ export const requirePermission = (...permKeys: string[]) => {
     const isSuperAdmin =
       req.user.role === 'SUPER_ADMIN' ||
       req.user.roleName === 'Super Admin' ||
-      (req.user.role && req.user.role.toUpperCase() === 'SUPER ADMIN');
+      (req.user.role && req.user.role.toUpperCase().replace(/\s+/g, '_') === 'SUPER_ADMIN') ||
+      req.user.username === 'superadmin';
 
     if (isSuperAdmin) {
       return next();
@@ -258,9 +259,14 @@ export const requirePermission = (...permKeys: string[]) => {
       return next();
     }
 
+    const isPodPerm = permKeys.some(k => k.startsWith('pods'));
+    const message = isPodPerm
+      ? 'You do not have permission to access PODs.'
+      : `Forbidden: You do not have permission for '${permKeys.join(' or ')}'.`;
+
     return res.status(403).json({
       success: false,
-      message: `Forbidden: You do not have permission for '${permKeys.join(' or ')}'.`,
+      message,
     });
   };
 };

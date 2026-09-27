@@ -118,7 +118,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       path: 'pods',
       icon: <Server className="w-5 h-5" />,
       allowedRoles: ['SUPER_ADMIN', 'MANAGEMENT', 'BRANCH_MANAGER', 'STAFF'],
-      permissionKey: 'pods',
+      permissionKey: 'pods.view',
     },
     {
       label: 'Request Goods',
@@ -219,7 +219,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     if (item.permissionKey && !hasPermission(item.permissionKey)) {
       if (
         item.permissionKey === 'discussions' ||
-        item.permissionKey === 'pods' ||
         item.permissionKey === 'electricity' ||
         item.permissionKey === 'information'
       ) {
