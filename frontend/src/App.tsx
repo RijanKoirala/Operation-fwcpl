@@ -38,21 +38,6 @@ export const App: React.FC = () => {
   const [showSearchModal, setShowSearchModal] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white">
-        <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-        <p className="text-sm font-semibold tracking-wide text-indigo-200">
-          Loading Fiber World Operations Platform...
-        </p>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return <Login />;
-  }
-
   const userRole = (user?.role || '').toUpperCase().replace(/\s+/g, '_');
   const roleNameUpper = ((user as any)?.roleName || (user as any)?.role_name || '').toUpperCase().replace(/\s+/g, '_');
   const userDept = (user?.departmentCode || user?.department_code || '').toUpperCase();
@@ -66,22 +51,6 @@ export const App: React.FC = () => {
     userDept !== 'OPS' &&
     userDept !== 'NOC'
   );
-
-  // Synchronize route with browser URL on mount and popstate
-  React.useEffect(() => {
-    const syncRouteFromUrl = () => {
-      if (typeof window !== 'undefined') {
-        const path = window.location.pathname.replace(/^\//, '');
-        if (path) {
-          handleNavigate(path);
-        }
-      }
-    };
-
-    syncRouteFromUrl();
-    window.addEventListener('popstate', syncRouteFromUrl);
-    return () => window.removeEventListener('popstate', syncRouteFromUrl);
-  }, []);
 
   const handleNavigate = (page: string) => {
     const clean = page.replace(/^\//, '');
@@ -124,6 +93,37 @@ export const App: React.FC = () => {
       setCurrentPage(clean);
     }
   };
+
+  // Synchronize route with browser URL on mount and popstate - ALWAYS CALLED AT TOP LEVEL
+  React.useEffect(() => {
+    const syncRouteFromUrl = () => {
+      if (typeof window !== 'undefined') {
+        const path = window.location.pathname.replace(/^\//, '');
+        if (path) {
+          handleNavigate(path);
+        }
+      }
+    };
+
+    syncRouteFromUrl();
+    window.addEventListener('popstate', syncRouteFromUrl);
+    return () => window.removeEventListener('popstate', syncRouteFromUrl);
+  }, []);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white">
+        <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+        <p className="text-sm font-semibold tracking-wide text-indigo-200">
+          Loading Fiber World Operations Platform...
+        </p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Login />;
+  }
 
   const renderContent = () => {
     // If a branch-scoped user somehow hits 'noc', render Discussions directly
@@ -280,4 +280,70 @@ export const App: React.FC = () => {
   );
 };
 
-export default App;
+interface ErrorBoundaryProps {
+  children: React.ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('ErrorBoundary caught an unhandled error:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 text-white text-center">
+          <div className="w-16 h-16 rounded-2xl bg-rose-500/20 text-rose-400 flex items-center justify-center mx-auto mb-4 text-2xl font-bold">
+            ⚠️
+          </div>
+          <h2 className="text-xl font-bold text-white mb-2">Something went wrong</h2>
+          <p className="text-xs text-slate-300 max-w-md mx-auto mb-6">
+            An unexpected error occurred while rendering this view. Your session and data are safe.
+          </p>
+          <div className="flex gap-3 justify-center">
+            <button
+              onClick={() => {
+                localStorage.removeItem('fwcpl_token');
+                sessionStorage.clear();
+                window.location.href = '/';
+              }}
+              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-semibold transition border border-white/10"
+            >
+              Sign In Again
+            </button>
+            <button
+              onClick={() => window.location.reload()}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition shadow-sm"
+            >
+              Reload Page
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+export default function AppWithErrorBoundary() {
+  return (
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
+  );
+}
+
