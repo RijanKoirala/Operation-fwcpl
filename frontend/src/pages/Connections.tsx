@@ -48,13 +48,40 @@ export const Connections: React.FC = () => {
     phone: '',
     email: '',
     address: '',
-    branchId: user?.branchId || '',
+    branchId: (user?.branchId || user?.branch_id) ? String(user?.branchId || user?.branch_id) : '',
     assignedStaffIds: [] as number[],
     connectionType: 'Fiber Internet',
     packagePlan: 'Home Super 200 Mbps',
     requestDate: new Date().toISOString().split('T')[0],
     remarks: '',
   });
+
+  // Keep branchId updated if user loads after mount
+  useEffect(() => {
+    if (!createForm.branchId && (user?.branchId || user?.branch_id)) {
+      setCreateForm(prev => ({
+        ...prev,
+        branchId: String(user.branchId || user.branch_id),
+      }));
+    }
+  }, [user]);
+
+  const openCreateConnModal = () => {
+    const defaultBranchId = user?.branchId || user?.branch_id || (branches.length === 1 ? branches[0].id : '');
+    setCreateForm({
+      customerName: '',
+      phone: '',
+      email: '',
+      address: '',
+      branchId: defaultBranchId ? String(defaultBranchId) : '',
+      assignedStaffIds: [],
+      connectionType: 'Fiber Internet',
+      packagePlan: 'Home Super 200 Mbps',
+      requestDate: new Date().toISOString().split('T')[0],
+      remarks: '',
+    });
+    setShowCreateModal(true);
+  };
 
   const pipelineStages = [
     'New Request',
@@ -135,15 +162,20 @@ export const Connections: React.FC = () => {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await api.post('/connections', createForm);
+      const payload = {
+        ...createForm,
+        branchId: createForm.branchId || user?.branchId || user?.branch_id,
+      };
+      const res = await api.post('/connections', payload);
       if (res.success) {
         setShowCreateModal(false);
+        const defaultBranchId = user?.branchId || user?.branch_id || '';
         setCreateForm({
           customerName: '',
           phone: '',
           email: '',
           address: '',
-          branchId: user?.branchId || '',
+          branchId: defaultBranchId ? String(defaultBranchId) : '',
           assignedStaffIds: [],
           connectionType: 'Fiber Internet',
           packagePlan: 'Home Super 200 Mbps',
@@ -199,8 +231,8 @@ export const Connections: React.FC = () => {
         </div>
 
         <button
-          onClick={() => setShowCreateModal(true)}
-          className="px-4 py-2 bg-brand-600 text-white font-bold text-xs rounded-xl hover:bg-brand-700 shadow-sm flex items-center gap-1.5 transition-colors"
+          onClick={openCreateConnModal}
+          className="px-4 py-2 bg-brand-600 text-white font-bold text-xs rounded-xl hover:bg-brand-700 shadow-sm flex items-center gap-1.5 transition-colors cursor-pointer"
         >
           <Plus className="w-4 h-4" />
           New Connection Request
@@ -507,12 +539,18 @@ export const Connections: React.FC = () => {
               <p className="text-[11px] text-slate-500 mb-1.5">
                 Assign one or more technicians for survey, cabling, splicing, or activation.
               </p>
-              <MultiStaffSelect
-                staff={staffMembers.filter(s => Number(s.branch_id) === Number(selectedConn.branch_id))}
-                selectedIds={updateStaffIds}
-                onChange={setUpdateStaffIds}
-                placeholder="Assign technicians..."
-              />
+              {(() => {
+                const connBranchId = selectedConn?.branch_id || selectedConn?.branchId || user?.branchId || user?.branch_id;
+                const filteredStaff = staffMembers.filter(s => !connBranchId || Number(s.branch_id || s.branchId) === Number(connBranchId));
+                return (
+                  <MultiStaffSelect
+                    staff={filteredStaff}
+                    selectedIds={updateStaffIds}
+                    onChange={setUpdateStaffIds}
+                    placeholder={filteredStaff.length === 0 ? "No technicians available in connection's branch" : "Assign technicians..."}
+                  />
+                );
+              })()}
             </div>
 
             <div>
@@ -602,7 +640,7 @@ export const Connections: React.FC = () => {
                     branchId: newBranchId,
                     assignedStaffIds: createForm.assignedStaffIds.filter(id => {
                       const st = staffMembers.find(s => s.id === id);
-                      return st && (!newBranchId || Number(st.branch_id) === Number(newBranchId));
+                      return st && (!newBranchId || Number(st.branch_id || st.branchId) === Number(newBranchId));
                     }),
                   });
                 }}
@@ -622,12 +660,18 @@ export const Connections: React.FC = () => {
               <p className="text-[11px] text-slate-500 mb-1.5">
                 Assign one or multiple technicians to handle this connection.
               </p>
-              <MultiStaffSelect
-                staff={staffMembers.filter(s => !createForm.branchId || Number(s.branch_id) === Number(createForm.branchId))}
-                selectedIds={createForm.assignedStaffIds}
-                onChange={ids => setCreateForm({ ...createForm, assignedStaffIds: ids })}
-                placeholder="Search technicians to assign..."
-              />
+              {(() => {
+                const activeBranchId = createForm.branchId || user?.branchId || user?.branch_id;
+                const filteredStaff = staffMembers.filter(s => !activeBranchId || Number(s.branch_id || s.branchId) === Number(activeBranchId));
+                return (
+                  <MultiStaffSelect
+                    staff={filteredStaff}
+                    selectedIds={createForm.assignedStaffIds}
+                    onChange={ids => setCreateForm({ ...createForm, assignedStaffIds: ids })}
+                    placeholder={filteredStaff.length === 0 ? "No technicians available in selected branch" : "Search technicians to assign..."}
+                  />
+                );
+              })()}
             </div>
           </div>
 

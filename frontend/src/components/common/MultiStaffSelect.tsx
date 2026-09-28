@@ -3,12 +3,19 @@ import { User, Check, X, Search, ChevronDown, Users } from 'lucide-react';
 
 export interface StaffOption {
   id: number;
-  full_name: string;
+  full_name?: string;
+  fullName?: string;
+  name?: string;
   employee_id?: string | null;
+  employeeId?: string | null;
   phone?: string | null;
   designation_name?: string | null;
+  designationName?: string | null;
+  designation?: string | null;
   branch_id?: number | null;
+  branchId?: number | null;
   branch_name?: string | null;
+  branchName?: string | null;
   role?: string | null;
 }
 
@@ -55,11 +62,12 @@ export const MultiStaffSelect: React.FC<MultiStaffSelectProps> = ({
   const filteredStaff = staff.filter(s => {
     const query = searchTerm.toLowerCase().trim();
     if (!query) return true;
-    const nameMatch = s.full_name?.toLowerCase().includes(query);
-    const empMatch = s.employee_id?.toLowerCase().includes(query);
-    const desMatch = s.designation_name?.toLowerCase().includes(query);
-    const phoneMatch = s.phone?.includes(query);
-    return nameMatch || empMatch || desMatch || phoneMatch;
+    const nameMatch = (s.full_name || s.fullName || s.name || '').toLowerCase().includes(query);
+    const empMatch = (s.employee_id || s.employeeId || '').toLowerCase().includes(query);
+    const desMatch = (s.designation_name || s.designationName || s.designation || '').toLowerCase().includes(query);
+    const branchMatch = (s.branch_name || s.branchName || '').toLowerCase().includes(query);
+    const phoneMatch = (s.phone || '').includes(query);
+    return nameMatch || empMatch || desMatch || branchMatch || phoneMatch;
   });
 
   const handleToggle = (id: number) => {
@@ -113,30 +121,38 @@ export const MultiStaffSelect: React.FC<MultiStaffSelectProps> = ({
         }`}
       >
         {/* Selected Chips */}
-        {selectedStaff.map(member => (
-          <span
-            key={member.id}
-            className="inline-flex items-center gap-1.5 bg-brand-50 text-brand-900 border border-brand-200/80 px-2 py-1 rounded-lg text-xs font-semibold shadow-2xs group animate-in fade-in zoom-in duration-100"
-          >
-            <span className="w-4 h-4 rounded-full bg-brand-600 text-white flex items-center justify-center text-[10px] font-black shrink-0">
-              {member.full_name?.charAt(0).toUpperCase() || 'U'}
+        {selectedStaff.map(member => {
+          const empId = member.employee_id || member.employeeId;
+          const displayName = member.full_name || member.fullName || member.name || 'Staff';
+          const desName = member.designation_name || member.designationName || member.designation;
+          return (
+            <span
+              key={member.id}
+              className="inline-flex items-center gap-1.5 bg-brand-50 text-brand-900 border border-brand-200/80 px-2 py-1 rounded-lg text-xs font-semibold shadow-2xs group animate-in fade-in zoom-in duration-100"
+            >
+              <span className="w-4 h-4 rounded-full bg-brand-600 text-white flex items-center justify-center text-[10px] font-black shrink-0">
+                {displayName.charAt(0).toUpperCase()}
+              </span>
+              <span className="max-w-[160px] truncate">
+                {empId ? <span className="font-mono text-[10px] text-brand-700 bg-brand-100/70 px-1 py-0.2 rounded mr-1">#{empId}</span> : null}
+                {displayName}
+              </span>
+              {desName && (
+                <span className="text-[10px] text-brand-600 font-medium">({desName})</span>
+              )}
+              {!disabled && (
+                <button
+                  type="button"
+                  onClick={e => handleRemove(e, member.id)}
+                  className="text-brand-400 hover:text-rose-600 hover:bg-rose-50 rounded p-0.5 transition-colors"
+                  title={`Remove ${displayName}`}
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
             </span>
-            <span className="max-w-[140px] truncate">{member.full_name}</span>
-            {member.designation_name && (
-              <span className="text-[10px] text-brand-600 font-medium">({member.designation_name})</span>
-            )}
-            {!disabled && (
-              <button
-                type="button"
-                onClick={e => handleRemove(e, member.id)}
-                className="text-brand-400 hover:text-rose-600 hover:bg-rose-50 rounded p-0.5 transition-colors"
-                title={`Remove ${member.full_name}`}
-              >
-                <X className="w-3 h-3" />
-              </button>
-            )}
-          </span>
-        ))}
+          );
+        })}
 
         {/* Placeholder / Prompt */}
         {selectedIds.length === 0 && (
@@ -181,6 +197,10 @@ export const MultiStaffSelect: React.FC<MultiStaffSelectProps> = ({
               ) : (
                 filteredStaff.map(member => {
                   const isSelected = selectedIds.includes(member.id);
+                  const empId = member.employee_id || member.employeeId;
+                  const displayName = member.full_name || member.fullName || member.name || 'Staff';
+                  const desName = member.designation_name || member.designationName || member.designation;
+                  const branchName = member.branch_name || member.branchName;
                   return (
                     <div
                       key={member.id}
@@ -202,19 +222,20 @@ export const MultiStaffSelect: React.FC<MultiStaffSelectProps> = ({
                               : 'bg-slate-200 text-slate-600'
                           }`}
                         >
-                          {member.full_name?.charAt(0).toUpperCase() || 'U'}
+                          {displayName.charAt(0).toUpperCase()}
                         </div>
                         <div className="min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <span className="truncate">{member.full_name}</span>
-                            {member.employee_id && (
-                              <span className="text-[10px] text-slate-400 font-normal">
-                                #{member.employee_id}
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {empId && (
+                              <span className="text-[10px] font-mono font-bold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 shrink-0">
+                                {empId}
                               </span>
                             )}
+                            <span className="truncate font-semibold text-slate-900">{displayName}</span>
                           </div>
                           <div className="text-[11px] text-slate-400 flex items-center gap-2 font-normal">
-                            {member.designation_name && <span>{member.designation_name}</span>}
+                            {desName && <span>{desName}</span>}
+                            {branchName && <span>• {branchName}</span>}
                             {member.phone && <span>• {member.phone}</span>}
                           </div>
                         </div>
@@ -262,7 +283,7 @@ export const MultiStaffSelect: React.FC<MultiStaffSelectProps> = ({
  * Renders concise names: "Ram Bahadur, Shyam +2" with a popover tooltip
  */
 export const AssignedStaffPills: React.FC<{
-  staff?: { id: number; full_name: string; designation_name?: string | null; phone?: string | null }[];
+  staff?: { id: number; full_name?: string; fullName?: string; name?: string; employee_id?: string | null; employeeId?: string | null; designation_name?: string | null; phone?: string | null }[];
   fallbackName?: string | null;
   maxDisplay?: number;
 }> = ({ staff = [], fallbackName, maxDisplay = 2 }) => {
@@ -290,15 +311,22 @@ export const AssignedStaffPills: React.FC<{
       onMouseLeave={() => setShowTooltip(false)}
     >
       <div className="flex items-center gap-1 flex-wrap">
-        {visibleItems.map((m, idx) => (
-          <span
-            key={m.id || idx}
-            className="inline-flex items-center gap-1 text-xs font-semibold text-slate-800 bg-slate-100/80 px-2 py-0.5 rounded-md border border-slate-200/60"
-          >
-            <User className="w-3 h-3 text-slate-500 shrink-0" />
-            <span className="max-w-[110px] truncate">{m.full_name}</span>
-          </span>
-        ))}
+        {visibleItems.map((m, idx) => {
+          const empId = m.employee_id || m.employeeId;
+          const name = m.full_name || m.fullName || m.name || 'Staff';
+          return (
+            <span
+              key={m.id || idx}
+              className="inline-flex items-center gap-1 text-xs font-semibold text-slate-800 bg-slate-100/80 px-2 py-0.5 rounded-md border border-slate-200/60"
+            >
+              <User className="w-3 h-3 text-slate-500 shrink-0" />
+              <span className="max-w-[130px] truncate">
+                {empId ? <span className="font-mono text-[10px] text-slate-500 mr-1">#{empId}</span> : null}
+                {name}
+              </span>
+            </span>
+          );
+        })}
 
         {remainingCount > 0 && (
           <span
@@ -315,19 +343,26 @@ export const AssignedStaffPills: React.FC<{
 
       {/* Popover showing full staff list on hover or click */}
       {showTooltip && (
-        <div className="absolute left-0 bottom-full mb-1.5 z-40 bg-slate-900 text-white p-2.5 rounded-xl shadow-xl min-w-[200px] text-xs space-y-1.5 animate-in fade-in zoom-in-95 duration-100 pointer-events-auto">
+        <div className="absolute left-0 bottom-full mb-1.5 z-40 bg-slate-900 text-white p-2.5 rounded-xl shadow-xl min-w-[220px] text-xs space-y-1.5 animate-in fade-in zoom-in-95 duration-100 pointer-events-auto">
           <div className="font-bold text-[11px] text-slate-300 uppercase tracking-wider pb-1 border-b border-slate-800 flex items-center justify-between">
             <span>All Assigned Staff ({items.length})</span>
           </div>
-          <div className="max-h-40 overflow-y-auto space-y-1">
-            {items.map((m, idx) => (
-              <div key={m.id || idx} className="flex items-center justify-between gap-2">
-                <span className="font-bold text-white truncate">{m.full_name}</span>
-                {m.designation_name && (
-                  <span className="text-[10px] text-slate-400 shrink-0">{m.designation_name}</span>
-                )}
-              </div>
-            ))}
+          <div className="max-h-40 overflow-y-auto space-y-1.5 pt-1">
+            {items.map((m, idx) => {
+              const empId = m.employee_id || m.employeeId;
+              const name = m.full_name || m.fullName || m.name || 'Staff';
+              return (
+                <div key={m.id || idx} className="flex items-center justify-between gap-2">
+                  <span className="font-bold text-white truncate">
+                    {empId ? <span className="font-mono text-[10px] text-slate-400 mr-1.5 font-normal">[{empId}]</span> : null}
+                    {name}
+                  </span>
+                  {m.designation_name && (
+                    <span className="text-[10px] text-slate-400 shrink-0">{m.designation_name}</span>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

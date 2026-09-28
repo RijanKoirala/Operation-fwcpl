@@ -30,6 +30,7 @@ async function attachStaffToConnections(connections: any[]): Promise<any[]> {
       id: s.id,
       full_name: s.full_name,
       employee_id: s.employee_id,
+      employeeId: s.employee_id,
       phone: s.phone,
       role: s.role,
       designation_name: s.designation_name,
@@ -45,7 +46,8 @@ async function attachStaffToConnections(connections: any[]): Promise<any[]> {
           id: c.assigned_staff_id,
           full_name: c.assigned_staff_name,
           phone: c.assigned_staff_phone || null,
-          employee_id: null,
+          employee_id: c.assigned_staff_emp_id || null,
+          employeeId: c.assigned_staff_emp_id || null,
           role: null,
           designation_name: null,
         },
@@ -185,7 +187,7 @@ router.get('/:id', authenticate, async (req: Request, res: Response) => {
     const connRes = await db.query(
       `SELECT c.*,
               b.name as branch_name, b.code as branch_code,
-              u.full_name as assigned_staff_name, u.phone as assigned_staff_phone
+              u.full_name as assigned_staff_name, u.phone as assigned_staff_phone, u.employee_id as assigned_staff_emp_id
        FROM connections c
        LEFT JOIN branches b ON c.branch_id = b.id
        LEFT JOIN users u ON c.assigned_staff_id = u.id
@@ -210,14 +212,18 @@ router.get('/:id', authenticate, async (req: Request, res: Response) => {
       [connectionId]
     );
 
-    let assignedStaff = staffRes.rows;
+    let assignedStaff = staffRes.rows.map(r => ({
+      ...r,
+      employeeId: r.employee_id,
+    }));
     if (assignedStaff.length === 0 && conn.assigned_staff_id && conn.assigned_staff_name) {
       assignedStaff = [
         {
           id: conn.assigned_staff_id,
           full_name: conn.assigned_staff_name,
           phone: conn.assigned_staff_phone || null,
-          employee_id: null,
+          employee_id: conn.assigned_staff_emp_id || null,
+          employeeId: conn.assigned_staff_emp_id || null,
           role: null,
           designation_name: null,
         },
@@ -225,7 +231,13 @@ router.get('/:id', authenticate, async (req: Request, res: Response) => {
     }
     conn.assigned_staff = assignedStaff;
 
-    if (req.user?.role === 'BRANCH_MANAGER' && !checkBranchAccess(req.user, conn.branch_id)) {
+    const userRole = (req.user?.role || '').toUpperCase().replace(/\s+/g, '_');
+    const roleNameUpper = (req.user?.roleName || '').toUpperCase().replace(/\s+/g, '_');
+    const deptUpper = (req.user?.departmentCode || req.user?.department_code || '').toUpperCase();
+    const isSuperAdmin = userRole === 'SUPER_ADMIN' || roleNameUpper === 'SUPER_ADMIN' || req.user?.username === 'superadmin';
+    const isCentralLeadership = isSuperAdmin || ((userRole === 'MANAGEMENT' || roleNameUpper === 'MANAGEMENT' || deptUpper === 'EXEC' || deptUpper === 'OPERATION' || deptUpper === 'OPS') && (req.user?.allowedBranches === 'ALL' || req.user?.allowedBranches === '*'));
+
+    if (!isCentralLeadership && !checkBranchAccess(req.user!, conn.branch_id)) {
       return res.status(403).json({ success: false, message: 'Access denied: record outside your branch.' });
     }
 
@@ -294,21 +306,33 @@ router.post('/', authenticate, async (req: Request, res: Response) => {
     return res.status(400).json({ success: false, message: 'Customer name, phone, address, branch, package, and request date are required.' });
   }
 
-  let finalBranchId = branchId;
-  if (req.user?.role === 'BRANCH_MANAGER') {
-    finalBranchId = req.user.branchId;
+  const userRole = (req.user?.role || '').toUpperCase().replace(/\s+/g, '_');
+  const roleNameUpper = (req.user?.roleName || '').toUpperCase().replace(/\s+/g, '_');
+  const deptUpper = (req.user?.departmentCode || req.user?.department_code || '').toUpperCase();
+  const isSuperAdmin = userRole === 'SUPER_ADMIN' || roleNameUpper === 'SUPER_ADMIN' || req.user?.username === 'superadmin';
+  const isCentralLeadership = isSuperAdmin || ((userRole === 'MANAGEMENT' || roleNameUpper === 'MANAGEMENT' || deptUpper === 'EXEC' || deptUpper === 'OPERATION' || deptUpper === 'OPS') && (req.user?.allowedBranches === 'ALL' || req.user?.allowedBranches === '*'));
+
+  let finalBranchId = Number(branchId);
+  if (!isCentralLeadership) {
+    if (!checkBranchAccess(req.user!, branchId)) {
+      return res.status(403).json({ success: false, message: 'Forbidden: You cannot create connections for other branches.' });
+    }
+    finalBranchId = Number(req.user!.branchId || branchId);
   }
 
   // Branch tenancy check for assigned staff
-  if (staffIds.length > 0 && req.user?.role === 'BRANCH_MANAGER') {
+  if (staffIds.length > 0 && !isCentralLeadership) {
     const validStaffRes = await db.query(
-      `SELECT id FROM users WHERE id = ANY($1) AND branch_id = $2`,
-      [staffIds, finalBranchId]
+      `SELECT id, branch_id FROM users WHERE id = ANY($1)`,
+      [staffIds]
     );
-    const validIds = new Set(validStaffRes.rows.map(r => r.id));
-    const invalid = staffIds.filter(id => !validIds.has(id));
-    if (invalid.length > 0) {
-      return res.status(403).json({ success: false, message: 'You can only assign staff from your branch.' });
+    if (validStaffRes.rowCount !== staffIds.length) {
+      return res.status(400).json({ success: false, message: 'One or more assigned staff members do not exist.' });
+    }
+    for (const s of validStaffRes.rows) {
+      if (!checkBranchAccess(req.user!, s.branch_id) || Number(s.branch_id) !== finalBranchId) {
+        return res.status(403).json({ success: false, message: 'Forbidden: You can only assign staff belonging to your authorized branch.' });
+      }
     }
   }
 
@@ -405,13 +429,19 @@ router.put('/:id', authenticate, async (req: Request, res: Response) => {
     }
     const current = curRes.rows[0];
 
-    if (req.user?.role === 'BRANCH_MANAGER' && !checkBranchAccess(req.user, current.branch_id)) {
-      return res.status(403).json({ success: false, message: 'Cannot modify records outside your branch.' });
+    const userRole = (req.user?.role || '').toUpperCase().replace(/\s+/g, '_');
+    const roleNameUpper = (req.user?.roleName || '').toUpperCase().replace(/\s+/g, '_');
+    const deptUpper = (req.user?.departmentCode || req.user?.department_code || '').toUpperCase();
+    const isSuperAdmin = userRole === 'SUPER_ADMIN' || roleNameUpper === 'SUPER_ADMIN' || req.user?.username === 'superadmin';
+    const isCentralLeadership = isSuperAdmin || ((userRole === 'MANAGEMENT' || roleNameUpper === 'MANAGEMENT' || deptUpper === 'EXEC' || deptUpper === 'OPERATION' || deptUpper === 'OPS') && (req.user?.allowedBranches === 'ALL' || req.user?.allowedBranches === '*'));
+
+    if (!isCentralLeadership && !checkBranchAccess(req.user!, current.branch_id)) {
+      return res.status(403).json({ success: false, message: 'Forbidden: Cannot modify records outside your branch.' });
     }
 
-    const newBranchId = branchId !== undefined && (req.user?.role === 'SUPER_ADMIN' || req.user?.role === 'MANAGEMENT')
+    const newBranchId = branchId !== undefined && isCentralLeadership
       ? Number(branchId)
-      : (branchId !== undefined && req.user?.role === 'BRANCH_MANAGER' && req.user.branchId ? req.user.branchId : current.branch_id);
+      : (branchId !== undefined && !isCentralLeadership && req.user?.branchId ? Number(req.user.branchId) : Number(current.branch_id));
 
     const hasStaffUpdate =
       req.body.assignedStaffIds !== undefined ||
@@ -422,6 +452,20 @@ router.put('/:id', authenticate, async (req: Request, res: Response) => {
     let newStaffIds = current.assigned_staff_id ? [current.assigned_staff_id] : [];
     if (hasStaffUpdate) {
       newStaffIds = parseStaffIds(req.body);
+      if (newStaffIds.length > 0 && !isCentralLeadership) {
+        const validStaffRes = await db.query(
+          `SELECT id, branch_id FROM users WHERE id = ANY($1)`,
+          [newStaffIds]
+        );
+        if (validStaffRes.rowCount !== newStaffIds.length) {
+          return res.status(400).json({ success: false, message: 'One or more assigned staff members do not exist.' });
+        }
+        for (const s of validStaffRes.rows) {
+          if (!checkBranchAccess(req.user!, s.branch_id) || Number(s.branch_id) !== newBranchId) {
+            return res.status(403).json({ success: false, message: 'Forbidden: You can only assign staff belonging to your authorized branch.' });
+          }
+        }
+      }
     }
 
     const primaryStaffId = newStaffIds.length > 0 ? newStaffIds[0] : null;

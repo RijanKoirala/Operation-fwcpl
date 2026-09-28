@@ -8,7 +8,7 @@ import { calculateStaffPerformance } from '../services/calculationService';
 const router = Router();
 
 // GET /api/staff - List staff
-router.get('/', authenticate, requirePermission('staff.view', 'staff'), async (req: Request, res: Response) => {
+router.get('/', authenticate, async (req: Request, res: Response) => {
   const { branchId, departmentId, designationId, status, search, page = '1', limit = '50' } = req.query;
   const pageNum = parseInt(page as string, 10) || 1;
   const limitNum = parseInt(limit as string, 10) || 50;
@@ -18,15 +18,53 @@ router.get('/', authenticate, requirePermission('staff.view', 'staff'), async (r
     let whereClauses: string[] = [];
     let params: any[] = [];
 
-    // Role-based branch scoping
-    if (req.user?.role === 'BRANCH_MANAGER') {
-      if (req.user.branchId) {
-        params.push(req.user.branchId);
+    const userRole = (req.user?.role || '').toUpperCase().replace(/\s+/g, '_');
+    const roleNameUpper = (req.user?.roleName || '').toUpperCase().replace(/\s+/g, '_');
+    const deptUpper = (req.user?.departmentCode || req.user?.department_code || '').toUpperCase();
+
+    const isSuperAdmin =
+      userRole === 'SUPER_ADMIN' ||
+      roleNameUpper === 'SUPER_ADMIN' ||
+      req.user?.username === 'superadmin';
+
+    const isCentralLeadership =
+      isSuperAdmin ||
+      ((userRole === 'MANAGEMENT' || roleNameUpper === 'MANAGEMENT' || deptUpper === 'EXEC' || deptUpper === 'OPERATION' || deptUpper === 'OPS') &&
+       (req.user?.allowedBranches === 'ALL' || req.user?.allowedBranches === '*'));
+
+    // Role and tenancy-based branch scoping
+    if (isCentralLeadership) {
+      if (branchId) {
+        params.push(Number(branchId));
         whereClauses.push(`u.branch_id = $${params.length}`);
       }
-    } else if (branchId) {
-      params.push(branchId);
-      whereClauses.push(`u.branch_id = $${params.length}`);
+    } else {
+      // Branch-scoped user: strictly restrict to their authorized branch(es)
+      const authorizedBranchIds = req.user?.assignedBranchIds && req.user.assignedBranchIds.length > 0
+        ? req.user.assignedBranchIds.map(Number)
+        : (req.user?.branchId ? [Number(req.user.branchId)] : []);
+
+      if (branchId) {
+        const reqBranchIdNum = Number(branchId);
+        if (!authorizedBranchIds.includes(reqBranchIdNum)) {
+          return res.status(403).json({
+            success: false,
+            message: 'Forbidden: You cannot access staff from other branches.',
+          });
+        }
+        params.push(reqBranchIdNum);
+        whereClauses.push(`u.branch_id = $${params.length}`);
+      } else {
+        if (authorizedBranchIds.length === 1) {
+          params.push(authorizedBranchIds[0]);
+          whereClauses.push(`u.branch_id = $${params.length}`);
+        } else if (authorizedBranchIds.length > 1) {
+          params.push(authorizedBranchIds);
+          whereClauses.push(`u.branch_id = ANY($${params.length})`);
+        } else {
+          whereClauses.push('1 = 0');
+        }
+      }
     }
 
     if (departmentId) {
@@ -74,9 +112,37 @@ router.get('/', authenticate, requirePermission('staff.view', 'staff'), async (r
 
     const result = await db.query(query, params);
 
+    const formattedStaff = result.rows.map(u => ({
+      ...u,
+      id: Number(u.id),
+      employeeId: u.employee_id,
+      employee_id: u.employee_id,
+      fullName: u.full_name,
+      full_name: u.full_name,
+      name: u.full_name,
+      branchId: u.branch_id,
+      branch_id: u.branch_id,
+      branchName: u.branch_name,
+      branch_name: u.branch_name,
+      branchCode: u.branch_code,
+      branch_code: u.branch_code,
+      designationId: u.designation_id,
+      designation_id: u.designation_id,
+      designationName: u.designation_name,
+      designation_name: u.designation_name,
+      designation: u.designation_name,
+      departmentId: u.department_id,
+      department_id: u.department_id,
+      departmentName: u.department_name,
+      department_name: u.department_name,
+      department: u.department_name,
+      departmentCode: u.department_code,
+      department_code: u.department_code,
+    }));
+
     return res.json({
       success: true,
-      staff: result.rows,
+      staff: formattedStaff,
       pagination: {
         total,
         page: pageNum,
@@ -169,14 +235,37 @@ router.get('/admins/list', authenticate, requireRoles('SUPER_ADMIN'), async (req
         END, 
         u.id ASC
     `);
-    return res.json({ success: true, admins: result.rows });
+    const formattedAdmins = result.rows.map(u => ({
+      ...u,
+      id: Number(u.id),
+      employeeId: u.employee_id,
+      employee_id: u.employee_id,
+      fullName: u.full_name,
+      full_name: u.full_name,
+      name: u.full_name,
+      branchId: u.branch_id,
+      branch_id: u.branch_id,
+      branchName: u.branch_name,
+      branch_name: u.branch_name,
+      branchCode: u.branch_code,
+      branch_code: u.branch_code,
+      designationId: u.designation_id,
+      designation_id: u.designation_id,
+      designationName: u.designation_name,
+      designation_name: u.designation_name,
+      departmentId: u.department_id,
+      department_id: u.department_id,
+      departmentName: u.department_name,
+      department_name: u.department_name,
+    }));
+    return res.json({ success: true, admins: formattedAdmins });
   } catch (err: any) {
     return res.status(500).json({ success: false, message: err.message });
   }
 });
 
 // GET /api/staff/:id - Detailed Staff Profile
-router.get('/:id', authenticate, requirePermission('staff.view', 'staff'), async (req: Request, res: Response) => {
+router.get('/:id', authenticate, async (req: Request, res: Response) => {
   const staffId = parseInt(req.params.id, 10);
 
   try {
@@ -202,10 +291,36 @@ router.get('/:id', authenticate, requirePermission('staff.view', 'staff'), async
 
     const staffUser = userRes.rows[0];
 
-    // Branch tenancy check
-    if (req.user?.role === 'BRANCH_MANAGER' && !checkBranchAccess(req.user, staffUser.branch_id)) {
+    // Branch tenancy check: User cannot view details of staff outside their branch unless viewing their own profile
+    if (!checkBranchAccess(req.user!, staffUser.branch_id) && req.user!.id !== staffId) {
       return res.status(403).json({ success: false, message: 'Access denied: staff outside your branch.' });
     }
+
+    const formattedStaffUser = {
+      ...staffUser,
+      id: Number(staffUser.id),
+      employeeId: staffUser.employee_id,
+      employee_id: staffUser.employee_id,
+      fullName: staffUser.full_name,
+      full_name: staffUser.full_name,
+      name: staffUser.full_name,
+      branchId: staffUser.branch_id,
+      branch_id: staffUser.branch_id,
+      branchName: staffUser.branch_name,
+      branch_name: staffUser.branch_name,
+      branchCode: staffUser.branch_code,
+      branch_code: staffUser.branch_code,
+      designationId: staffUser.designation_id,
+      designation_id: staffUser.designation_id,
+      designationName: staffUser.designation_name,
+      designation_name: staffUser.designation_name,
+      designation: staffUser.designation_name,
+      departmentId: staffUser.department_id,
+      department_id: staffUser.department_id,
+      departmentName: staffUser.department_name,
+      department_name: staffUser.department_name,
+      department: staffUser.department_name,
+    };
 
     // Tasks overview
     const tasksRes = await db.query(
@@ -258,7 +373,7 @@ router.get('/:id', authenticate, requirePermission('staff.view', 'staff'), async
 
     return res.json({
       success: true,
-      staff: staffUser,
+      staff: formattedStaffUser,
       tasks: tasksRes.rows,
       targets: targetsRes.rows,
       tickets: ticketsRes.rows,

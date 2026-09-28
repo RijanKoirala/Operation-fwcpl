@@ -59,6 +59,11 @@ export const Profile: React.FC = () => {
             {user.name.charAt(0)}
           </div>
           <h2 className="font-bold text-gray-900 text-lg">{user.name}</h2>
+          <div className="flex items-center justify-center gap-1.5 my-1.5">
+            <span className="inline-block px-2.5 py-0.5 rounded-md text-xs font-mono font-bold bg-slate-100 text-slate-800 border border-slate-200">
+              EMP ID: {user.employeeId || user.employee_id || '-'}
+            </span>
+          </div>
           <p className="text-xs text-indigo-600 font-semibold mb-2">@{user.username}</p>
           <span className="inline-block px-3 py-1 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-100 mb-6">
             {user.role}
@@ -66,12 +71,16 @@ export const Profile: React.FC = () => {
 
           <div className="space-y-3 text-left border-t border-gray-100 pt-5 text-xs">
             <div className="flex items-center gap-2.5 text-gray-600">
+              <User className="w-4 h-4 text-gray-400 shrink-0" />
+              <span>Employee ID: <strong className="font-mono text-gray-900">{user.employeeId || user.employee_id || '-'}</strong></span>
+            </div>
+            <div className="flex items-center gap-2.5 text-gray-600">
               <Building2 className="w-4 h-4 text-gray-400 shrink-0" />
-              <span>{user.branch_name || 'Headquarters / Global'}</span>
+              <span>{user.branch_name || user.branchName || 'Headquarters / Global'}</span>
             </div>
             <div className="flex items-center gap-2.5 text-gray-600">
               <Briefcase className="w-4 h-4 text-gray-400 shrink-0" />
-              <span>{user.designation || 'Staff Member'} ({user.department || 'Operations'})</span>
+              <span>{user.designation || user.designationName || 'Staff Member'} ({user.department || user.departmentName || 'Operations'})</span>
             </div>
             <div className="flex items-center gap-2.5 text-gray-600">
               <Mail className="w-4 h-4 text-gray-400 shrink-0" />

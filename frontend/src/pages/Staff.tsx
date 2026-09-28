@@ -529,20 +529,22 @@ export const Staff: React.FC<StaffPageProps> = ({ onNavigate }) => {
               <tbody className="divide-y divide-slate-100">
                 {staffList.map(s => (
                   <tr key={s.id} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="py-3.5 px-4 font-bold text-slate-800">{s.employeeId}</td>
+                    <td className="py-3.5 px-4 font-mono font-bold text-slate-800 text-xs">
+                      {s.employeeId || s.employee_id || '-'}
+                    </td>
                     <td className="py-3.5 px-4 font-semibold text-slate-900">
-                      {s.fullName}
+                      {s.fullName || s.full_name || s.name}
                       <span className="block text-xs font-normal text-slate-400">@{s.username} • {s.email}</span>
                     </td>
-                    <td className="py-3.5 px-4">{s.branchName || 'Unassigned'}</td>
-                    <td className="py-3.5 px-4 font-medium">{s.designationName || '-'}</td>
-                    <td className="py-3.5 px-4 text-slate-500">{s.departmentName || '-'}</td>
+                    <td className="py-3.5 px-4">{s.branchName || s.branch_name || 'Unassigned'}</td>
+                    <td className="py-3.5 px-4 font-medium">{s.designationName || s.designation_name || s.designation || '-'}</td>
+                    <td className="py-3.5 px-4 text-slate-500">{s.departmentName || s.department_name || s.department || '-'}</td>
                     <td className="py-3.5 px-4 text-xs font-semibold text-brand-700">{s.role}</td>
                     <td className="py-3.5 px-4"><StatusBadge status={s.status} /></td>
                     <td className="py-3.5 px-4 text-right">
                       <button
                         onClick={() => viewStaffDetails(s.id)}
-                        className="text-xs font-bold text-brand-600 hover:text-brand-800 bg-brand-50 hover:bg-brand-100 px-2.5 py-1 rounded-lg transition-colors"
+                        className="text-xs font-bold text-brand-600 hover:text-brand-800 bg-brand-50 hover:bg-brand-100 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
                       >
                         Profile & Stats
                       </button>
@@ -673,7 +675,7 @@ export const Staff: React.FC<StaffPageProps> = ({ onNavigate }) => {
                                     {adm.fullName || adm.full_name}
                                   </span>
                                   <span className="text-[11px] text-slate-400 font-mono block">
-                                    @{adm.username} • {adm.email}
+                                    {(adm.employeeId || adm.employee_id) ? `#${adm.employeeId || adm.employee_id} • ` : ''}@{adm.username} • {adm.email}
                                   </span>
                                 </div>
                               </div>
@@ -1235,11 +1237,41 @@ export const Staff: React.FC<StaffPageProps> = ({ onNavigate }) => {
         <Modal
           isOpen={true}
           onClose={() => setSelectedStaffProfile(null)}
-          title={`Staff Profile: ${selectedStaffProfile.staff.full_name}`}
-          subtitle={`${selectedStaffProfile.staff.designation_name || 'Staff'} • ${selectedStaffProfile.staff.branch_name}`}
+          title={`Staff Profile: ${selectedStaffProfile.staff.fullName || selectedStaffProfile.staff.full_name}`}
+          subtitle={`Employee ID: ${selectedStaffProfile.staff.employeeId || selectedStaffProfile.staff.employee_id || 'N/A'} • ${selectedStaffProfile.staff.designationName || selectedStaffProfile.staff.designation_name || 'Staff'} • ${selectedStaffProfile.staff.branchName || selectedStaffProfile.staff.branch_name}`}
           maxWidth="2xl"
         >
           <div className="space-y-6">
+            {/* Identity Card */}
+            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200/80 flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-full bg-brand-600 text-white font-bold flex items-center justify-center text-sm shadow-xs shrink-0">
+                  {(selectedStaffProfile.staff.fullName || selectedStaffProfile.staff.full_name || 'U').slice(0, 2).toUpperCase()}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-mono font-bold bg-white px-2 py-0.5 rounded border border-slate-200 text-slate-800">
+                      ID: {selectedStaffProfile.staff.employeeId || selectedStaffProfile.staff.employee_id || '-'}
+                    </span>
+                    <span className="font-bold text-slate-900 text-sm">
+                      {selectedStaffProfile.staff.fullName || selectedStaffProfile.staff.full_name}
+                    </span>
+                  </div>
+                  <div className="text-xs text-slate-500 mt-0.5">
+                    <span>{selectedStaffProfile.staff.designationName || selectedStaffProfile.staff.designation_name || 'Staff'}</span>
+                    <span className="mx-1.5">•</span>
+                    <span>{selectedStaffProfile.staff.departmentName || selectedStaffProfile.staff.department_name || 'Operations'}</span>
+                    <span className="mx-1.5">•</span>
+                    <span className="font-medium text-slate-700">{selectedStaffProfile.staff.branchName || selectedStaffProfile.staff.branch_name}</span>
+                  </div>
+                </div>
+              </div>
+              <div className="text-xs text-slate-500 text-right">
+                <div className="font-medium text-slate-700">{selectedStaffProfile.staff.email}</div>
+                {selectedStaffProfile.staff.phone && <div className="font-mono text-slate-600">{selectedStaffProfile.staff.phone}</div>}
+              </div>
+            </div>
+
             {/* KPI Summary */}
             <div className="grid grid-cols-4 gap-3">
               <div className="bg-slate-50 p-3 rounded-xl border border-slate-200/60 text-center">

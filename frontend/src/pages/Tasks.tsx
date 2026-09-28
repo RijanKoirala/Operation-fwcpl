@@ -53,12 +53,37 @@ export const Tasks: React.FC = () => {
     title: '',
     description: '',
     category: 'General',
-    branchId: user?.branchId || '',
+    branchId: (user?.branchId || user?.branch_id) ? String(user?.branchId || user?.branch_id) : '',
     assignedStaffIds: [] as number[],
     priority: 'Medium',
     startDate: new Date().toISOString().split('T')[0],
     dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
   });
+
+  // Keep branchId updated if user loads after mount
+  useEffect(() => {
+    if (!createForm.branchId && (user?.branchId || user?.branch_id)) {
+      setCreateForm(prev => ({
+        ...prev,
+        branchId: String(user.branchId || user.branch_id),
+      }));
+    }
+  }, [user]);
+
+  const openCreateTaskModal = () => {
+    const defaultBranchId = user?.branchId || user?.branch_id || (branches.length === 1 ? branches[0].id : '');
+    setCreateForm({
+      title: '',
+      description: '',
+      category: 'General',
+      branchId: defaultBranchId ? String(defaultBranchId) : '',
+      assignedStaffIds: [],
+      priority: 'Medium',
+      startDate: new Date().toISOString().split('T')[0],
+      dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    });
+    setShowCreateModal(true);
+  };
 
   const fetchTasks = async () => {
     setLoading(true);
@@ -102,14 +127,19 @@ export const Tasks: React.FC = () => {
   const handleCreateTask = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await api.post('/tasks', createForm);
+      const payload = {
+        ...createForm,
+        branchId: createForm.branchId || user?.branchId || user?.branch_id,
+      };
+      const res = await api.post('/tasks', payload);
       if (res.success) {
         setShowCreateModal(false);
+        const defaultBranchId = user?.branchId || user?.branch_id || '';
         setCreateForm({
           title: '',
           description: '',
           category: 'General',
-          branchId: user?.branchId || '',
+          branchId: defaultBranchId ? String(defaultBranchId) : '',
           assignedStaffIds: [],
           priority: 'Medium',
           startDate: new Date().toISOString().split('T')[0],
@@ -239,8 +269,8 @@ export const Tasks: React.FC = () => {
 
         {['SUPER_ADMIN', 'MANAGEMENT', 'BRANCH_MANAGER'].includes(user?.role || '') && (
           <button
-            onClick={() => setShowCreateModal(true)}
-            className="px-4 py-2 bg-brand-600 text-white font-bold text-xs rounded-xl hover:bg-brand-700 shadow-sm flex items-center gap-1.5 transition-colors"
+            onClick={openCreateTaskModal}
+            className="px-4 py-2 bg-brand-600 text-white font-bold text-xs rounded-xl hover:bg-brand-700 shadow-sm flex items-center gap-1.5 transition-colors cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             Create Operations Task
@@ -432,16 +462,21 @@ export const Tasks: React.FC = () => {
                           {s.full_name ? s.full_name.charAt(0).toUpperCase() : 'U'}
                         </div>
                         <div className="min-w-0 flex-1">
-                          <div className="text-xs font-bold text-slate-800 truncate">
-                            {s.full_name}
+                          <div className="text-xs font-bold text-slate-800 truncate flex items-center gap-1.5 flex-wrap">
+                            {(s.employee_id || s.employeeId) && (
+                              <span className="font-mono text-[10px] text-slate-700 bg-slate-100 px-1 py-0.2 rounded border border-slate-200 font-semibold">
+                                #{s.employee_id || s.employeeId}
+                              </span>
+                            )}
+                            <span>{s.full_name || s.fullName}</span>
                             {s.is_primary && (
-                              <span className="ml-1.5 px-1.5 py-0.2 text-[9px] bg-brand-50 text-brand-700 font-black rounded border border-brand-200">
+                              <span className="ml-1 px-1.5 py-0.2 text-[9px] bg-brand-50 text-brand-700 font-black rounded border border-brand-200">
                                 Lead
                               </span>
                             )}
                           </div>
                           <div className="text-[10px] text-slate-400 truncate">
-                            {s.designation_name || 'Staff'} {s.phone ? `• ${s.phone}` : ''}
+                            {s.designation_name || s.designationName || 'Staff'} {s.phone ? `• ${s.phone}` : ''}
                           </div>
                         </div>
                       </div>
@@ -453,7 +488,14 @@ export const Tasks: React.FC = () => {
                       {selectedTask.assigned_to_name.charAt(0).toUpperCase()}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="text-xs font-bold text-slate-800 truncate">{selectedTask.assigned_to_name}</div>
+                      <div className="text-xs font-bold text-slate-800 truncate">
+                        {(selectedTask.assigned_staff_emp_id || selectedTask.assigned_to_emp_id || (selectedTask as any).assignedStaffEmpId) && (
+                          <span className="font-mono text-[10px] text-slate-700 bg-slate-100 px-1 py-0.2 rounded border border-slate-200 font-semibold mr-1.5">
+                            #{selectedTask.assigned_staff_emp_id || selectedTask.assigned_to_emp_id || (selectedTask as any).assignedStaffEmpId}
+                          </span>
+                        )}
+                        {selectedTask.assigned_to_name}
+                      </div>
                     </div>
                   </div>
                 ) : (
@@ -702,12 +744,18 @@ export const Tasks: React.FC = () => {
             <p className="text-[11px] text-slate-500 mb-2">
               Select one or multiple staff members who will execute or collaborate on this task (or leave empty to unassign).
             </p>
-            <MultiStaffSelect
-              staff={staffMembers.filter(s => !selectedTask || Number(s.branch_id) === Number(selectedTask.branch_id))}
-              selectedIds={reassignStaffIds}
-              onChange={setReassignStaffIds}
-              placeholder="Search and select staff members..."
-            />
+            {(() => {
+              const taskBranchId = selectedTask?.branch_id || selectedTask?.branchId || user?.branchId || user?.branch_id;
+              const filteredStaff = staffMembers.filter(s => !taskBranchId || Number(s.branch_id || s.branchId) === Number(taskBranchId));
+              return (
+                <MultiStaffSelect
+                  staff={filteredStaff}
+                  selectedIds={reassignStaffIds}
+                  onChange={setReassignStaffIds}
+                  placeholder={filteredStaff.length === 0 ? "No staff available in task's branch" : "Search and select staff members..."}
+                />
+              );
+            })()}
           </div>
 
           <div className="flex justify-end gap-2 pt-2">
@@ -767,7 +815,7 @@ export const Tasks: React.FC = () => {
                     branchId: newBranchId,
                     assignedStaffIds: createForm.assignedStaffIds.filter(id => {
                       const st = staffMembers.find(s => s.id === id);
-                      return st && (!newBranchId || Number(st.branch_id) === Number(newBranchId));
+                      return st && (!newBranchId || Number(st.branch_id || st.branchId) === Number(newBranchId));
                     }),
                   });
                 }}
@@ -787,12 +835,18 @@ export const Tasks: React.FC = () => {
               <p className="text-[11px] text-slate-500 mb-1.5">
                 Assign one or multiple team members to this task.
               </p>
-              <MultiStaffSelect
-                staff={staffMembers.filter(s => !createForm.branchId || Number(s.branch_id) === Number(createForm.branchId))}
-                selectedIds={createForm.assignedStaffIds}
-                onChange={ids => setCreateForm({ ...createForm, assignedStaffIds: ids })}
-                placeholder="Search staff to assign..."
-              />
+              {(() => {
+                const activeBranchId = createForm.branchId || user?.branchId || user?.branch_id;
+                const filteredStaff = staffMembers.filter(s => !activeBranchId || Number(s.branch_id || s.branchId) === Number(activeBranchId));
+                return (
+                  <MultiStaffSelect
+                    staff={filteredStaff}
+                    selectedIds={createForm.assignedStaffIds}
+                    onChange={ids => setCreateForm({ ...createForm, assignedStaffIds: ids })}
+                    placeholder={filteredStaff.length === 0 ? "No staff available in selected branch" : "Search staff to assign..."}
+                  />
+                );
+              })()}
             </div>
           </div>
 

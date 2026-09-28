@@ -306,22 +306,33 @@ router.post('/', authenticate, requirePermission('tasks.create'), async (req: Re
     return res.status(400).json({ success: false, message: 'Title, branch, start date, and due date are required.' });
   }
 
-  // Branch manager check
-  let finalBranchId = branchId;
-  if (req.user?.role === 'BRANCH_MANAGER') {
-    finalBranchId = req.user.branchId;
+  const userRole = (req.user?.role || '').toUpperCase().replace(/\s+/g, '_');
+  const roleNameUpper = (req.user?.roleName || '').toUpperCase().replace(/\s+/g, '_');
+  const deptUpper = (req.user?.departmentCode || req.user?.department_code || '').toUpperCase();
+  const isSuperAdmin = userRole === 'SUPER_ADMIN' || roleNameUpper === 'SUPER_ADMIN' || req.user?.username === 'superadmin';
+  const isCentralLeadership = isSuperAdmin || ((userRole === 'MANAGEMENT' || roleNameUpper === 'MANAGEMENT' || deptUpper === 'EXEC' || deptUpper === 'OPERATION' || deptUpper === 'OPS') && (req.user?.allowedBranches === 'ALL' || req.user?.allowedBranches === '*'));
+
+  let finalBranchId = Number(branchId);
+  if (!isCentralLeadership) {
+    if (!checkBranchAccess(req.user!, branchId)) {
+      return res.status(403).json({ success: false, message: 'Forbidden: You cannot create tasks for other branches.' });
+    }
+    finalBranchId = Number(req.user!.branchId || branchId);
   }
 
-  // Tenancy check: Ensure assigned staff belong to the branch
-  if (staffIds.length > 0 && req.user?.role === 'BRANCH_MANAGER') {
+  // Tenancy check: Ensure assigned staff belong to user's authorized branch
+  if (staffIds.length > 0 && !isCentralLeadership) {
     const validStaffRes = await db.query(
-      `SELECT id FROM users WHERE id = ANY($1) AND branch_id = $2`,
-      [staffIds, finalBranchId]
+      `SELECT id, branch_id FROM users WHERE id = ANY($1)`,
+      [staffIds]
     );
-    const validIds = new Set(validStaffRes.rows.map(r => r.id));
-    const invalid = staffIds.filter(id => !validIds.has(id));
-    if (invalid.length > 0) {
-      return res.status(403).json({ success: false, message: 'You can only assign staff from your branch.' });
+    if (validStaffRes.rowCount !== staffIds.length) {
+      return res.status(400).json({ success: false, message: 'One or more assigned staff members do not exist.' });
+    }
+    for (const s of validStaffRes.rows) {
+      if (!checkBranchAccess(req.user!, s.branch_id) || Number(s.branch_id) !== finalBranchId) {
+        return res.status(403).json({ success: false, message: 'Forbidden: You can only assign staff belonging to your authorized branch.' });
+      }
     }
   }
 
@@ -420,8 +431,14 @@ router.put('/:id', authenticate, requirePermission('tasks.create'), async (req: 
     }
     const current = curRes.rows[0];
 
-    if (req.user?.role === 'BRANCH_MANAGER' && !checkBranchAccess(req.user, current.branch_id)) {
-      return res.status(403).json({ success: false, message: 'Cannot modify tasks outside your branch.' });
+    const userRole = (req.user?.role || '').toUpperCase().replace(/\s+/g, '_');
+    const roleNameUpper = (req.user?.roleName || '').toUpperCase().replace(/\s+/g, '_');
+    const deptUpper = (req.user?.departmentCode || req.user?.department_code || '').toUpperCase();
+    const isSuperAdmin = userRole === 'SUPER_ADMIN' || roleNameUpper === 'SUPER_ADMIN' || req.user?.username === 'superadmin';
+    const isCentralLeadership = isSuperAdmin || ((userRole === 'MANAGEMENT' || roleNameUpper === 'MANAGEMENT' || deptUpper === 'EXEC' || deptUpper === 'OPERATION' || deptUpper === 'OPS') && (req.user?.allowedBranches === 'ALL' || req.user?.allowedBranches === '*'));
+
+    if (!isCentralLeadership && !checkBranchAccess(req.user!, current.branch_id)) {
+      return res.status(403).json({ success: false, message: 'Forbidden: Cannot modify tasks outside your branch.' });
     }
 
     // Check staff updates if provided
@@ -434,6 +451,21 @@ router.put('/:id', authenticate, requirePermission('tasks.create'), async (req: 
     let newStaffIds = current.assigned_to_id ? [current.assigned_to_id] : [];
     if (hasStaffUpdate) {
       newStaffIds = parseStaffIds(req.body);
+      if (newStaffIds.length > 0 && !isCentralLeadership) {
+        const validStaffRes = await db.query(
+          `SELECT id, branch_id FROM users WHERE id = ANY($1)`,
+          [newStaffIds]
+        );
+        if (validStaffRes.rowCount !== newStaffIds.length) {
+          return res.status(400).json({ success: false, message: 'One or more assigned staff members do not exist.' });
+        }
+        const taskBranchId = Number(branchId || current.branch_id);
+        for (const s of validStaffRes.rows) {
+          if (!checkBranchAccess(req.user!, s.branch_id) || Number(s.branch_id) !== taskBranchId) {
+            return res.status(403).json({ success: false, message: 'Forbidden: You can only assign staff belonging to your authorized branch.' });
+          }
+        }
+      }
     }
 
     const primaryStaffId = newStaffIds.length > 0 ? newStaffIds[0] : null;
