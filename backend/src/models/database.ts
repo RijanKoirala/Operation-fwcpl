@@ -234,8 +234,8 @@ class DatabaseManager {
 
         ALTER TABLE connections ADD COLUMN IF NOT EXISTS completion_date DATE;
 
-        ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '{"tasks": true, "connections": true, "request_goods": true, "followups": true, "staff": true, "instructions": true, "targets": true, "noc": true, "reports": true}'::jsonb;
-        ALTER TABLE users ADD COLUMN IF NOT EXISTS allowed_branches TEXT DEFAULT 'ALL';
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '{}'::jsonb;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS allowed_branches TEXT DEFAULT NULL;
 
         ALTER TABLE noc_incident_updates ADD COLUMN IF NOT EXISTS status_change VARCHAR(50);
 
@@ -301,7 +301,17 @@ class DatabaseManager {
         ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(50);
         ALTER TABLE users ADD COLUMN IF NOT EXISTS role_id INTEGER REFERENCES roles(id) ON DELETE SET NULL;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login TIMESTAMP;
-        ALTER TABLE users ADD COLUMN IF NOT EXISTS allowed_branches TEXT DEFAULT 'ALL';
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS allowed_branches TEXT DEFAULT NULL;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INTEGER DEFAULT 1;
+
+        CREATE TABLE IF NOT EXISTS invalidated_tokens (
+            token_hash VARCHAR(64) PRIMARY KEY,
+            user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+            invalidated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_invalidated_tokens_user ON invalidated_tokens(user_id);
+        CREATE INDEX IF NOT EXISTS idx_invalidated_tokens_expires ON invalidated_tokens(expires_at);
 
         CREATE TABLE IF NOT EXISTS goods_items (
             id SERIAL PRIMARY KEY,

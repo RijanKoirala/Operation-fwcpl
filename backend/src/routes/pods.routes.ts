@@ -305,7 +305,7 @@ router.post('/', authenticate, requirePermission('pods.create'), async (req: Req
 // ============================================================
 // 4. PUT /api/pods/:id - Edit POD / DC
 // ============================================================
-router.put('/:id', authenticate, requirePermission('pods.edit'), async (req: Request, res: Response) => {
+router.put('/:id', authenticate, requirePermission('pods.view'), requirePermission('pods.edit'), async (req: Request, res: Response) => {
   try {
     const podId = parseInt(req.params.id, 10);
     if (isNaN(podId)) return res.status(400).json({ success: false, message: 'Invalid POD ID.' });
@@ -465,7 +465,7 @@ router.put('/:id', authenticate, requirePermission('pods.edit'), async (req: Req
 // ============================================================
 // 5. DELETE /api/pods/:id - Delete POD / DC
 // ============================================================
-router.delete('/:id', authenticate, requirePermission('pods.delete'), async (req: Request, res: Response) => {
+router.delete('/:id', authenticate, requirePermission('pods.view'), requirePermission('pods.delete'), async (req: Request, res: Response) => {
   try {
     const podId = parseInt(req.params.id, 10);
     if (isNaN(podId)) return res.status(400).json({ success: false, message: 'Invalid POD ID.' });
@@ -500,7 +500,7 @@ router.delete('/:id', authenticate, requirePermission('pods.delete'), async (req
 // ============================================================
 // 6. GET /api/pods/:id/items - List all items for this POD
 // ============================================================
-router.get('/:id/items', authenticate, requirePermission('pods.items.view'), async (req: Request, res: Response) => {
+router.get('/:id/items', authenticate, requirePermission('pods.view'), requirePermission('pods.items.view'), async (req: Request, res: Response) => {
   try {
     const podId = parseInt(req.params.id, 10);
     if (isNaN(podId)) return res.status(400).json({ success: false, message: 'Invalid POD ID.' });
@@ -529,7 +529,7 @@ router.get('/:id/items', authenticate, requirePermission('pods.items.view'), asy
 // ============================================================
 // 7. POST /api/pods/:id/items - Add Item to this POD
 // ============================================================
-router.post('/:id/items', authenticate, requirePermission('pods.items.create'), async (req: Request, res: Response) => {
+router.post('/:id/items', authenticate, requirePermission('pods.view'), requirePermission('pods.items.create'), async (req: Request, res: Response) => {
   try {
     const podId = parseInt(req.params.id, 10);
     if (isNaN(podId)) return res.status(400).json({ success: false, message: 'Invalid POD ID.' });
@@ -604,7 +604,7 @@ router.post('/:id/items', authenticate, requirePermission('pods.items.create'), 
 // ============================================================
 // 8. PUT /api/pods/:id/items/:itemId - Edit Item in this POD
 // ============================================================
-router.put('/:id/items/:itemId', authenticate, requirePermission('pods.items.edit'), async (req: Request, res: Response) => {
+router.put('/:id/items/:itemId', authenticate, requirePermission('pods.view'), requirePermission('pods.items.edit'), async (req: Request, res: Response) => {
   try {
     const podId = parseInt(req.params.id, 10);
     const itemId = parseInt(req.params.itemId, 10);
@@ -688,7 +688,7 @@ router.put('/:id/items/:itemId', authenticate, requirePermission('pods.items.edi
 // ============================================================
 // 9. DELETE /api/pods/:id/items/:itemId - Delete Item from this POD
 // ============================================================
-router.delete('/:id/items/:itemId', authenticate, requirePermission('pods.items.delete'), async (req: Request, res: Response) => {
+router.delete('/:id/items/:itemId', authenticate, requirePermission('pods.view'), requirePermission('pods.items.delete'), async (req: Request, res: Response) => {
   try {
     const podId = parseInt(req.params.id, 10);
     const itemId = parseInt(req.params.itemId, 10);
@@ -731,7 +731,7 @@ router.delete('/:id/items/:itemId', authenticate, requirePermission('pods.items.
 // ============================================================
 // 10. GET /api/pods/:id/history - Audit trail for this POD
 // ============================================================
-router.get('/:id/history', authenticate, requirePermission('pods.history.view'), async (req: Request, res: Response) => {
+router.get('/:id/history', authenticate, requirePermission('pods.view'), requirePermission('pods.history.view'), async (req: Request, res: Response) => {
   try {
     const podId = parseInt(req.params.id, 10);
     if (isNaN(podId)) return res.status(400).json({ success: false, message: 'Invalid POD ID.' });
@@ -762,7 +762,7 @@ router.get('/:id/history', authenticate, requirePermission('pods.history.view'),
 // ============================================================
 // 11. GET /api/pods/history - Global Audit trail for all PODs
 // ============================================================
-router.get('/history', authenticate, requirePermission('pods.history.view'), async (req: Request, res: Response) => {
+router.get('/history', authenticate, requirePermission('pods.view'), requirePermission('pods.history.view'), async (req: Request, res: Response) => {
   try {
     const historyRes = await db.query(
       `SELECT 
@@ -791,7 +791,7 @@ router.get('/history', authenticate, requirePermission('pods.history.view'), asy
 // ============================================================
 // 12. PUT /api/pods/items/:itemId - Direct edit item by itemId
 // ============================================================
-router.put('/items/:itemId', authenticate, requirePermission('pods.items.edit'), async (req: Request, res: Response) => {
+router.put('/items/:itemId', authenticate, requirePermission('pods.view'), requirePermission('pods.items.edit'), async (req: Request, res: Response) => {
   try {
     const itemId = parseInt(req.params.itemId, 10);
     if (isNaN(itemId)) return res.status(400).json({ success: false, message: 'Invalid Item ID.' });
@@ -873,7 +873,7 @@ router.put('/items/:itemId', authenticate, requirePermission('pods.items.edit'),
 // ============================================================
 // 13. DELETE /api/pods/items/:itemId - Direct delete item by itemId
 // ============================================================
-router.delete('/items/:itemId', authenticate, requirePermission('pods.items.delete'), async (req: Request, res: Response) => {
+router.delete('/items/:itemId', authenticate, requirePermission('pods.view'), requirePermission('pods.items.delete'), async (req: Request, res: Response) => {
   try {
     const itemId = parseInt(req.params.itemId, 10);
     if (isNaN(itemId)) return res.status(400).json({ success: false, message: 'Invalid Item ID.' });

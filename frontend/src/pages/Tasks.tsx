@@ -82,7 +82,10 @@ export const Tasks: React.FC = () => {
 
   const fetchMeta = async () => {
     try {
-      const [brRes, stRes] = await Promise.all([api.get('/branches'), api.get('/staff')]);
+      const [brRes, stRes] = await Promise.all([
+        api.get('/branches').catch(() => ({ success: false, branches: [] })),
+        api.get('/staff').catch(() => ({ success: false, staff: [] })),
+      ]);
       if (brRes.success) setBranches(brRes.branches);
       if (stRes.success) setStaffMembers(stRes.staff);
     } catch {}

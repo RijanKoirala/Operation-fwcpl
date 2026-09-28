@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import { config } from '../config';
 import { db } from '../models/database';
 
@@ -19,10 +20,15 @@ export interface AuthUser {
   department_code?: string | null;
   branchId: number | null;
   branch_id?: number | null;
+  branchName?: string | null;
+  branch_name?: string | null;
+  branchCode?: string | null;
+  branch_code?: string | null;
   designationId: number | null;
   permissions: Record<string, boolean>;
   assignedBranchIds: number[];
   allowedBranches: string;
+  tokenVersion?: number;
   status: string;
 }
 
@@ -49,12 +55,23 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
   }
 
   try {
-    // Fetch user details including role and department safely with u.*
+    // Check if token was explicitly invalidated / logged out
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const invalidChk = await db.query(
+      `SELECT 1 FROM invalidated_tokens WHERE token_hash = $1`,
+      [tokenHash]
+    );
+    if (invalidChk.rowCount && invalidChk.rowCount > 0) {
+      return res.status(401).json({ success: false, message: 'Authentication session has expired or was terminated. Please sign in again.' });
+    }
+
+    // Fetch user details including role, department, and branch info
     const result = await db.query(
       `SELECT u.*,
-              u.permissions as legacy_permissions,
+              b.name as branch_name, b.code as branch_code,
               r.name as role_name, dep.name as department_name, dep.code as department_code
        FROM users u
+       LEFT JOIN branches b ON u.branch_id = b.id
        LEFT JOIN roles r ON u.role_id = r.id
        LEFT JOIN departments dep ON u.department_id = dep.id
        WHERE u.id = $1`,
@@ -73,13 +90,18 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
       });
     }
 
+    // Verify token version (if user logged out everywhere or password changed)
+    if (decoded.tokenVersion && userRow.token_version && decoded.tokenVersion < userRow.token_version) {
+      return res.status(401).json({ success: false, message: 'Authentication session has expired. Please sign in again.' });
+    }
+
     const isSuperAdmin =
       userRow.role === 'SUPER_ADMIN' ||
       userRow.role_name === 'Super Admin' ||
       (userRow.role && userRow.role.toUpperCase().replace(/\s+/g, '_') === 'SUPER_ADMIN') ||
       userRow.username === 'superadmin';
 
-    // 1. Calculate effective permissions
+    // 1. Calculate effective permissions strictly from database RBAC
     const effectivePermissions: Record<string, boolean> = {};
 
     if (isSuperAdmin) {
@@ -97,20 +119,42 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
         'dashboard', 'admins', 'roles', 'permissions', 'departments', 'branches',
         'targets', 'tasks', 'reports', 'commands', 'instructions', 'noc',
         'connections', 'tickets', 'followups', 'settings', 'audit', 'staff',
-        'goods_requests', 'goods_items', 'discussions', 'pods'
+        'goods_requests', 'goods_items', 'discussions', 'pods', 'electricity', 'information'
       ].forEach(m => {
         effectivePermissions[m] = true;
       });
     } else {
       // Start with role permissions
-      if (userRow.role_id) {
+      let roleId = userRow.role_id;
+      if (!roleId && userRow.role) {
+        const upperRole = String(userRow.role).toUpperCase().replace(/\s+/g, '_');
+        try {
+          let rRes = await db.query(
+            `SELECT id FROM roles WHERE UPPER(REPLACE(name, ' ', '_')) = $1 OR UPPER(name) = $1 LIMIT 1`,
+            [upperRole]
+          );
+          if (rRes.rowCount === 0 && (upperRole.includes('BRANCH') || userRow.branch_id)) {
+            rRes = await db.query(
+              `SELECT id FROM roles WHERE UPPER(name) LIKE '%BRANCH%' ORDER BY id ASC LIMIT 1`
+            );
+          }
+          if (rRes.rowCount > 0) {
+            roleId = rRes.rows[0].id;
+            db.query(`UPDATE users SET role_id = $1 WHERE id = $2 AND role_id IS NULL`, [roleId, userRow.id]).catch(() => {});
+          }
+        } catch (rErr: any) {
+          console.warn('Role fallback warning in auth middleware:', rErr.message);
+        }
+      }
+
+      if (roleId) {
         try {
           const rpRes = await db.query(
             `SELECT p.permission_key, rp.allowed
              FROM role_permissions rp
              JOIN permissions p ON rp.permission_id = p.id
              WHERE rp.role_id = $1 AND rp.allowed = TRUE`,
-            [userRow.role_id]
+            [roleId]
           );
           for (const row of rpRes.rows) {
             effectivePermissions[row.permission_key] = true;
@@ -140,30 +184,23 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
         console.warn('User permissions query warning:', upErr.message);
       }
 
-      // Backward compatibility with legacy JSON permissions if present
-      if (userRow.legacy_permissions) {
-        let legacy: Record<string, boolean> = {};
-        if (typeof userRow.legacy_permissions === 'string') {
-          try { legacy = JSON.parse(userRow.legacy_permissions); } catch {}
-        } else if (typeof userRow.legacy_permissions === 'object') {
-          legacy = userRow.legacy_permissions;
-        }
-        for (const [k, v] of Object.entries(legacy)) {
-          if (effectivePermissions[`${k}.view`] === undefined) {
-            effectivePermissions[`${k}.view`] = Boolean(v);
-          }
-          effectivePermissions[k] = Boolean(v);
-        }
-      }
-
       // Map module-level keys (e.g. 'tasks' = true if 'tasks.view' is true)
       for (const key of Object.keys(effectivePermissions)) {
         if (key.includes('.')) {
           const mod = key.split('.')[0];
-          if (effectivePermissions[key] && effectivePermissions[mod] === undefined) {
+          if (mod === 'pods') {
+            if (effectivePermissions['pods.view'] === true) {
+              effectivePermissions['pods'] = true;
+            } else {
+              effectivePermissions['pods'] = false;
+            }
+          } else if (effectivePermissions[key] && effectivePermissions[mod] === undefined) {
             effectivePermissions[mod] = true;
           }
         }
+      }
+      if (effectivePermissions['pods.view'] !== true) {
+        effectivePermissions['pods'] = false;
       }
     }
 
@@ -198,10 +235,15 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
       department_code: userRow.department_code || null,
       branchId: userRow.branch_id,
       branch_id: userRow.branch_id,
+      branchName: userRow.branch_name || null,
+      branch_name: userRow.branch_name || null,
+      branchCode: userRow.branch_code || null,
+      branch_code: userRow.branch_code || null,
       designationId: userRow.designation_id,
       permissions: effectivePermissions,
       assignedBranchIds,
       allowedBranches: userRow.allowed_branches || (isSuperAdmin ? 'ALL' : assignedBranchIds.join(',')),
+      tokenVersion: userRow.token_version || 1,
       status: userRow.status,
     };
 
@@ -280,18 +322,32 @@ export const checkBranchAccess = (
   const isSuperAdmin =
     user.role === 'SUPER_ADMIN' ||
     user.roleName === 'Super Admin' ||
-    (user.role && user.role.toUpperCase() === 'SUPER ADMIN');
+    (user.role && user.role.toUpperCase().replace(/\s+/g, '_') === 'SUPER_ADMIN') ||
+    user.username === 'superadmin';
 
   if (isSuperAdmin) {
     return true;
   }
 
-  if (user.allowedBranches === 'ALL' || user.allowedBranches === '*') {
+  const roleUpper = (user.role || '').toUpperCase().replace(/\s+/g, '_');
+  const roleNameUpper = (user.roleName || '').toUpperCase().replace(/\s+/g, '_');
+  const deptUpper = (user.departmentCode || user.department_code || '').toUpperCase();
+
+  const isCentralManagement =
+    roleUpper === 'MANAGEMENT' ||
+    roleNameUpper === 'MANAGEMENT' ||
+    deptUpper === 'EXEC' ||
+    deptUpper === 'OPERATION' ||
+    deptUpper === 'OPS';
+
+  // Only central leadership/management can use ALL allowed branches
+  if (isCentralManagement && (user.allowedBranches === 'ALL' || user.allowedBranches === '*')) {
     return true;
   }
 
   const targetIdNum = Number(targetBranchId);
 
+  // Branch users are strictly locked to their assigned branch IDs or branchId
   if (user.assignedBranchIds && user.assignedBranchIds.includes(targetIdNum)) {
     return true;
   }
@@ -300,7 +356,8 @@ export const checkBranchAccess = (
     return true;
   }
 
-  if (user.allowedBranches) {
+  // Explicit comma-separated allowed_branches (e.g. '2,3')
+  if (user.allowedBranches && user.allowedBranches !== 'ALL' && user.allowedBranches !== '*') {
     const list = user.allowedBranches.split(',').map(s => Number(s.trim()));
     if (list.includes(targetIdNum)) {
       return true;

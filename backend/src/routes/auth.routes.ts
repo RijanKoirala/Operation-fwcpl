@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import { db } from '../models/database';
 import { config } from '../config';
 import { authenticate } from '../middleware/auth';
@@ -81,14 +82,36 @@ router.post('/login', async (req: Request, res: Response) => {
         effectivePermissions[m] = true;
       });
     } else {
-      if (user.role_id) {
+      let roleId = user.role_id;
+      if (!roleId && user.role) {
+        const upperRole = String(user.role).toUpperCase().replace(/\s+/g, '_');
+        try {
+          let rRes = await db.query(
+            `SELECT id FROM roles WHERE UPPER(REPLACE(name, ' ', '_')) = $1 OR UPPER(name) = $1 LIMIT 1`,
+            [upperRole]
+          );
+          if (rRes.rowCount === 0 && (upperRole.includes('BRANCH') || user.branch_id)) {
+            rRes = await db.query(
+              `SELECT id FROM roles WHERE UPPER(name) LIKE '%BRANCH%' ORDER BY id ASC LIMIT 1`
+            );
+          }
+          if (rRes.rowCount > 0) {
+            roleId = rRes.rows[0].id;
+            db.query(`UPDATE users SET role_id = $1 WHERE id = $2 AND role_id IS NULL`, [roleId, user.id]).catch(() => {});
+          }
+        } catch (rErr: any) {
+          console.warn('Role fallback warning in auth login:', rErr.message);
+        }
+      }
+
+      if (roleId) {
         try {
           const rpRes = await db.query(
             `SELECT p.permission_key, rp.allowed
              FROM role_permissions rp
              JOIN permissions p ON rp.permission_id = p.id
              WHERE rp.role_id = $1 AND rp.allowed = TRUE`,
-            [user.role_id]
+            [roleId]
           );
           for (const row of rpRes.rows) {
             effectivePermissions[row.permission_key] = true;
@@ -120,10 +143,19 @@ router.post('/login', async (req: Request, res: Response) => {
       for (const key of Object.keys(effectivePermissions)) {
         if (key.includes('.')) {
           const mod = key.split('.')[0];
-          if (effectivePermissions[key] && effectivePermissions[mod] === undefined) {
+          if (mod === 'pods') {
+            if (effectivePermissions['pods.view'] === true) {
+              effectivePermissions['pods'] = true;
+            } else {
+              effectivePermissions['pods'] = false;
+            }
+          } else if (effectivePermissions[key] && effectivePermissions[mod] === undefined) {
             effectivePermissions[mod] = true;
           }
         }
+      }
+      if (effectivePermissions['pods.view'] !== true) {
+        effectivePermissions['pods'] = false;
       }
     }
 
@@ -146,6 +178,7 @@ router.post('/login', async (req: Request, res: Response) => {
         username: user.username,
         role: user.role,
         branchId: user.branch_id,
+        tokenVersion: user.token_version || 1,
       },
       config.jwtSecret,
       { expiresIn: config.jwtExpiresIn as any }
@@ -176,16 +209,20 @@ router.post('/login', async (req: Request, res: Response) => {
         roleName: user.role_name,
         branchId: user.branch_id,
         branchName: user.branch_name,
+        branchCode: user.branch_code,
+        branch_code: user.branch_code,
         designationId: user.designation_id,
         designationName: user.designation_name,
         departmentId: user.department_id,
         departmentName: user.department_name,
         departmentCode: user.department_code,
+        department_code: user.department_code,
         profilePhoto: user.profile_photo,
         permissions: effectivePermissions,
         assignedBranchIds,
         allowedBranches: user.allowed_branches || (isSuperAdmin ? 'ALL' : assignedBranchIds.join(',')),
         allowed_branches: user.allowed_branches || (isSuperAdmin ? 'ALL' : assignedBranchIds.join(',')),
+        tokenVersion: user.token_version || 1,
         status: user.status,
       },
     });
@@ -205,14 +242,77 @@ router.get('/me', authenticate, async (req: Request, res: Response) => {
 
 // POST /api/auth/logout
 router.post('/logout', authenticate, async (req: Request, res: Response) => {
-  await logActivity({
-    userId: req.user!.id,
-    action: 'LOGOUT',
-    module: 'AUTH',
-    recordId: req.user!.id,
-    req,
-  });
+  try {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.split(' ')[1];
+      const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
+      let expiresAt: Date | null = null;
+      try {
+        const decoded: any = jwt.decode(token);
+        if (decoded && decoded.exp) {
+          expiresAt = new Date(decoded.exp * 1000);
+        }
+      } catch {}
+      if (!expiresAt || isNaN(expiresAt.getTime())) {
+        expiresAt = new Date(Date.now() + 8 * 3600 * 1000);
+      }
+
+      await db.query(
+        `INSERT INTO invalidated_tokens (token_hash, user_id, invalidated_at, expires_at)
+         VALUES ($1, $2, CURRENT_TIMESTAMP, $3)
+         ON CONFLICT (token_hash) DO NOTHING`,
+        [tokenHash, req.user!.id, expiresAt]
+      );
+    }
+
+    // Increment token_version on user to invalidate any concurrent sessions
+    await db.query(
+      `UPDATE users SET token_version = COALESCE(token_version, 1) + 1 WHERE id = $1`,
+      [req.user!.id]
+    );
+
+    // Clean up expired invalidated tokens lazily
+    db.query(`DELETE FROM invalidated_tokens WHERE expires_at < CURRENT_TIMESTAMP`).catch(() => {});
+
+    await logActivity({
+      userId: req.user!.id,
+      action: 'LOGOUT',
+      module: 'AUTH',
+      recordId: req.user!.id,
+      req,
+    });
+  } catch (err: any) {
+    console.error('Logout error:', err);
+  }
   return res.json({ success: true, message: 'Logged out successfully.' });
+});
+
+// POST /api/auth/refresh - Secure session extension for active users
+router.post('/refresh', authenticate, async (req: Request, res: Response) => {
+  try {
+    const user = req.user!;
+    const token = jwt.sign(
+      {
+        id: user.id,
+        username: user.username,
+        role: user.role,
+        branchId: user.branchId,
+        tokenVersion: user.tokenVersion || 1,
+      },
+      config.jwtSecret,
+      { expiresIn: config.jwtExpiresIn as any }
+    );
+
+    return res.json({
+      success: true,
+      token,
+      user,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, message: 'Failed to refresh authentication session.' });
+  }
 });
 
 // GET /api/auth/demo-users

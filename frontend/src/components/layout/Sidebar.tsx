@@ -67,8 +67,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: 'Staff',
       path: 'staff',
       icon: <Users className="w-5 h-5" />,
-      allowedRoles: ['SUPER_ADMIN', 'MANAGEMENT', 'BRANCH_MANAGER'],
-      permissionKey: 'staff',
+      allowedRoles: ['SUPER_ADMIN', 'MANAGEMENT', 'BRANCH_MANAGER', 'STAFF'],
+      permissionKey: 'staff.view',
     },
     {
       label: 'Tasks',

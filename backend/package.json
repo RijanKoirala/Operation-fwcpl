@@ -13,6 +13,8 @@
     "test:acceptance:dev": "ts-node src/tests/acceptance.test.ts",
     "test:targets": "node dist/tests/targetConnectionSync.test.js",
     "test:targets:dev": "ts-node src/tests/targetConnectionSync.test.ts",
+    "test:reports": "node dist/tests/reports.test.js",
+    "test:reports:dev": "ts-node src/tests/reports.test.ts",
     "test:email": "node dist/tests/testEmail.js",
     "test:email:dev": "ts-node src/tests/testEmail.ts",
     "set:password": "node dist/scripts/setSuperadminPassword.js",

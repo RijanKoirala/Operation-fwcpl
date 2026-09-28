@@ -13,6 +13,30 @@ const router = Router();
 
 // GET /api/dashboard/main - Executive Management Dashboard
 router.get('/main', authenticate, async (req: Request, res: Response) => {
+  const user = req.user!;
+  const roleUpper = (user.role || '').toUpperCase().replace(/\s+/g, '_');
+  const roleNameUpper = (user.roleName || '').toUpperCase().replace(/\s+/g, '_');
+  const deptUpper = (user.departmentCode || user.department_code || '').toUpperCase();
+
+  const isSuperAdmin =
+    roleUpper === 'SUPER_ADMIN' ||
+    roleNameUpper === 'SUPER_ADMIN' ||
+    user.username === 'superadmin';
+
+  const isCentralManagement =
+    roleUpper === 'MANAGEMENT' ||
+    roleNameUpper === 'MANAGEMENT' ||
+    deptUpper === 'EXEC' ||
+    deptUpper === 'OPERATION' ||
+    deptUpper === 'OPS';
+
+  if (!isSuperAdmin && !isCentralManagement && (user.branchId || roleUpper === 'BRANCH_MANAGER' || roleUpper === 'STAFF')) {
+    return res.status(403).json({
+      success: false,
+      message: 'Forbidden: Branch users cannot access the central executive dashboard.',
+    });
+  }
+
   try {
     const now = new Date();
 

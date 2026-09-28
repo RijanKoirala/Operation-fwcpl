@@ -98,9 +98,52 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
+  useEffect(() => {
+    const handleAuthExpired = () => {
+      removeAuthToken();
+      localStorage.removeItem('fwcpl_token');
+      sessionStorage.clear();
+      setToken(null);
+      setUser(null);
+    };
+
+    window.addEventListener('auth:expired', handleAuthExpired);
+    return () => window.removeEventListener('auth:expired', handleAuthExpired);
+  }, []);
+
+  // Periodic session refresh for active users (every 30 minutes if tab is visible)
+  useEffect(() => {
+    if (!token || !user) return;
+
+    const refreshSession = async () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        try {
+          const res = await api.post('/auth/refresh');
+          if (res && res.success && res.token) {
+            setAuthToken(res.token);
+            setToken(res.token);
+          }
+        } catch (err: any) {
+          const msg = String(err?.message || '');
+          if (msg.includes('401') || msg.includes('expired') || msg.includes('terminated')) {
+            logout();
+          }
+        }
+      }
+    };
+
+    const interval = setInterval(refreshSession, 30 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [token, user]);
+
   const login = async (username: string, password: string = 'Password123!') => {
     setIsLoading(true);
     try {
+      // Clear previous cached session data completely before new login
+      removeAuthToken();
+      localStorage.removeItem('fwcpl_token');
+      sessionStorage.clear();
+
       const res = await api.post('/auth/login', { username, password });
       if (res && res.success && res.token && res.user) {
         setAuthToken(res.token);
@@ -115,6 +158,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           employee_id: res.user.employee_id || res.user.employeeId,
           fullName: res.user.full_name || res.user.fullName || res.user.name || res.user.username,
           full_name: res.user.full_name || res.user.fullName || res.user.name || res.user.username,
+          branchName: res.user.branch_name || res.user.branchName,
+          branch_name: res.user.branch_name || res.user.branchName,
+          branchCode: res.user.branch_code || res.user.branchCode,
+          branch_code: res.user.branch_code || res.user.branchCode,
           roleId: res.user.role_id || res.user.roleId,
           role_id: res.user.role_id || res.user.roleId,
           roleName: res.user.role_name || res.user.roleName,
@@ -148,6 +195,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       api.post('/auth/logout', {}).catch(() => {});
     } catch {}
     removeAuthToken();
+    localStorage.removeItem('fwcpl_token');
+    sessionStorage.clear();
     setToken(null);
     setUser(null);
   };
@@ -164,6 +213,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (roleUpper === 'SUPER_ADMIN' || roleNameUpper === 'SUPER_ADMIN') return true;
 
     if (user.permissions && typeof user.permissions === 'object') {
+      // Special case for 'pods': module access strictly requires 'pods.view'
+      if (permissionKey === 'pods') {
+        return Boolean(user.permissions['pods.view']);
+      }
       if (user.permissions[permissionKey] !== undefined) {
         return Boolean(user.permissions[permissionKey]);
       }

@@ -83,6 +83,12 @@ export const INITIAL_PERMISSIONS: PermissionDefinition[] = [
   { module: 'Follow-ups', name: 'Create Follow-ups', key: 'followups.create', description: 'Schedule new follow-ups for expired or support cases' },
   { module: 'Follow-ups', name: 'Edit Follow-ups', key: 'followups.edit', description: 'Log follow-up results and outcomes' },
 
+  // 14. Staff
+  { module: 'Staff', name: 'View Staff', key: 'staff.view', description: 'View staff members list and employee directory' },
+  { module: 'Staff', name: 'Create Staff', key: 'staff.create', description: 'Register new staff members' },
+  { module: 'Staff', name: 'Edit Staff', key: 'staff.edit', description: 'Modify staff member details and assignments' },
+  { module: 'Staff', name: 'Delete Staff', key: 'staff.delete', description: 'Deactivate or delete staff members' },
+
   // 15. Settings
   { module: 'Settings', name: 'View Settings', key: 'settings.view', description: 'View platform configuration and scoring weights' },
   { module: 'Settings', name: 'Edit Settings', key: 'settings.edit', description: 'Modify scoring algorithms, weights, and company profile' },
@@ -226,6 +232,7 @@ export const seedRbacData = async (): Promise<void> => {
           'connections.view', 'connections.create', 'connections.edit',
           'followups.view', 'followups.create', 'followups.edit',
           'admins.view',
+          'staff.view', 'staff.create', 'staff.edit', 'staff.delete',
           'audit.view',
           'goods_requests.view', 'goods_requests.view_all', 'goods_requests.accept', 'goods_requests.partial_accept',
           'goods_requests.deny', 'goods_requests.process', 'goods_requests.complete',
@@ -286,6 +293,7 @@ export const seedRbacData = async (): Promise<void> => {
 
     for (const r of defaultRoles) {
       let roleId: number;
+      let isNewRole = false;
       const res = await db.query(`SELECT id FROM roles WHERE name = $1`, [r.name]);
       if (res.rowCount > 0) {
         roleId = res.rows[0].id;
@@ -297,20 +305,25 @@ export const seedRbacData = async (): Promise<void> => {
           [r.name, r.description, deptIdMap[r.deptCode] || null, r.isSystem]
         );
         roleId = ins.rows[0].id;
+        isNewRole = true;
       }
       roleIdMap[r.name] = roleId;
 
-      // Ensure default role permissions are linked
-      for (const pKey of r.permissions) {
-        const pId = permIdMap[pKey];
-        if (!pId) continue;
-        const exists = await db.query(
-          `SELECT id FROM role_permissions WHERE role_id = $1 AND permission_id = $2`,
-          [roleId, pId]
-        );
-        if (exists.rowCount === 0) {
+      // Ensure default role permissions are linked ONLY IF newly created or role has 0 permissions assigned.
+      // This prevents wiping out user changes in Roles & Permissions (such as unchecking POD permissions) on restart.
+      const rpCountRes = await db.query(
+        `SELECT COUNT(*) as count FROM role_permissions WHERE role_id = $1`,
+        [roleId]
+      );
+      const permCount = parseInt(rpCountRes.rows[0]?.count || '0', 10);
+
+      if (isNewRole || permCount === 0) {
+        for (const pKey of r.permissions) {
+          const pId = permIdMap[pKey];
+          if (!pId) continue;
           await db.query(
-            `INSERT INTO role_permissions (role_id, permission_id, allowed) VALUES ($1, $2, $3)`,
+            `INSERT INTO role_permissions (role_id, permission_id, allowed) VALUES ($1, $2, $3)
+             ON CONFLICT (role_id, permission_id) DO NOTHING`,
             [roleId, pId, true]
           );
         }

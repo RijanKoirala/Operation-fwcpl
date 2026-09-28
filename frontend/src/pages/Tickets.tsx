@@ -87,7 +87,10 @@ export const Tickets: React.FC = () => {
   useEffect(() => {
     const loadMeta = async () => {
       try {
-        const [bRes, sRes] = await Promise.all([api.get('/branches'), api.get('/staff')]);
+        const [bRes, sRes] = await Promise.all([
+          api.get('/branches').catch(() => ({ success: false, branches: [] })),
+          api.get('/staff').catch(() => ({ success: false, staff: [] })),
+        ]);
         if (bRes.success) setBranches(bRes.branches);
         if (sRes.success) setStaffMembers(sRes.staff);
       } catch {}

@@ -46,6 +46,11 @@ async function request<T = any>(endpoint: string, options: RequestInit = {}): Pr
 
   if (response.status === 401) {
     removeAuthToken();
+    localStorage.removeItem('fwcpl_token');
+    sessionStorage.clear();
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('auth:expired'));
+    }
   }
 
   const data = await response.json().catch(() => ({}));
@@ -184,7 +189,7 @@ export const api = {
   // Reports
   reports: {
     get: (type: string, params?: any) => api.get(`/reports/${type}${toQueryString(params)}`),
-    exportCsv: async (type: string, params?: any): Promise<Blob> => {
+    exportCsv: async (type: string, params?: any): Promise<Blob & { filename?: string }> => {
       const token = getAuthToken();
       const q = toQueryString(params);
       const response = await fetch(`${BASE_URL}/reports/${type}/csv${q}`, {
@@ -192,8 +197,25 @@ export const api = {
           Authorization: `Bearer ${token}`,
         },
       });
-      if (!response.ok) throw new Error('Failed to export CSV');
-      return response.blob();
+      if (!response.ok) {
+        let msg = 'Failed to export CSV';
+        try {
+          const errData = await response.json();
+          if (errData && errData.message) msg = errData.message;
+        } catch {}
+        throw new Error(msg);
+      }
+      let filename = '';
+      const disposition = response.headers.get('content-disposition');
+      if (disposition && disposition.indexOf('filename=') !== -1) {
+        const matches = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/.exec(disposition);
+        if (matches != null && matches[1]) {
+          filename = matches[1].replace(/['"]/g, '');
+        }
+      }
+      const blob = await response.blob() as Blob & { filename?: string };
+      if (filename) blob.filename = filename;
+      return blob;
     },
   },
 

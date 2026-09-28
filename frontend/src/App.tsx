@@ -67,8 +67,28 @@ export const App: React.FC = () => {
     userDept !== 'NOC'
   );
 
+  // Synchronize route with browser URL on mount and popstate
+  React.useEffect(() => {
+    const syncRouteFromUrl = () => {
+      if (typeof window !== 'undefined') {
+        const path = window.location.pathname.replace(/^\//, '');
+        if (path) {
+          handleNavigate(path);
+        }
+      }
+    };
+
+    syncRouteFromUrl();
+    window.addEventListener('popstate', syncRouteFromUrl);
+    return () => window.removeEventListener('popstate', syncRouteFromUrl);
+  }, []);
+
   const handleNavigate = (page: string) => {
     const clean = page.replace(/^\//, '');
+    if (typeof window !== 'undefined' && window.location.pathname !== `/${clean}`) {
+      window.history.pushState(null, '', `/${clean}`);
+    }
+
     if (clean === 'noc' && isBranchScoped) {
       setCurrentPage('discussions');
       return;
@@ -81,22 +101,24 @@ export const App: React.FC = () => {
       const parts = clean.split('/');
       const id = parseInt(parts[1], 10);
       if (!isNaN(id)) {
-        setSelectedBranchId(id);
+        setSelectedBranchId(isBranchScoped ? (Number(user?.branchId || user?.branch_id) || id) : id);
         setCurrentPage('branch-dashboard');
       } else {
-        setCurrentPage('branches');
+        setCurrentPage(isBranchScoped ? 'branch-dashboard' : 'branches');
       }
     } else if (clean === 'branch-dashboard') {
+      if (isBranchScoped) {
+        setSelectedBranchId(Number(user?.branchId || user?.branch_id));
+      }
       setCurrentPage('branch-dashboard');
-    } else if (clean.startsWith('pods/')) {
+    } else if (clean.startsWith('pods/') || clean === 'pods') {
       const parts = clean.split('/');
       const id = parseInt(parts[1], 10);
       if (!isNaN(id)) {
         setSelectedPodId(id);
+      } else {
+        setSelectedPodId(undefined);
       }
-      setCurrentPage('pods');
-    } else if (clean === 'pods') {
-      setSelectedPodId(undefined);
       setCurrentPage('pods');
     } else {
       setCurrentPage(clean);
@@ -111,7 +133,7 @@ export const App: React.FC = () => {
 
     // Route-level permission protection
     const permMap: Record<string, string> = {
-      staff: 'staff',
+      staff: 'staff.view',
       tasks: 'tasks',
       tickets: 'tickets',
       noc: 'noc',
@@ -161,11 +183,13 @@ export const App: React.FC = () => {
     }
     switch (currentPage) {
       case 'dashboard':
-        if (userRole === 'BRANCH_MANAGER') return <BranchDashboard branchId={user?.branchId || undefined} onNavigate={handleNavigate} />;
+        if (isBranchScoped || userRole === 'BRANCH_MANAGER') {
+          return <BranchDashboard branchId={user?.branchId || undefined} onNavigate={handleNavigate} />;
+        }
         if (userRole === 'STAFF') return <StaffDashboard onNavigate={handleNavigate} />;
         return <Dashboard onNavigate={handleNavigate} />;
       case 'branch-dashboard':
-        return <BranchDashboard branchId={selectedBranchId} onNavigate={handleNavigate} />;
+        return <BranchDashboard branchId={isBranchScoped ? (user?.branchId || undefined) : selectedBranchId} onNavigate={handleNavigate} />;
       case 'staff-dashboard':
         return <StaffDashboard onNavigate={handleNavigate} />;
       case 'branches':

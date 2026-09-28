@@ -36,38 +36,60 @@ interface BranchDashboardProps {
 }
 
 export const BranchDashboard: React.FC<BranchDashboardProps> = ({ branchId: propBranchId, onNavigate }) => {
-  const { user } = useAuth();
-  const [selectedBranchId, setSelectedBranchId] = useState<number>(
-    propBranchId || user?.branchId || 1
-  );
+  const { user, hasPermission } = useAuth();
+
+  const userRole = (user?.role || '').toUpperCase().replace(/\s+/g, '_');
+  const roleNameUpper = ((user as any)?.roleName || (user as any)?.role_name || '').toUpperCase().replace(/\s+/g, '_');
+  const userDept = (user?.departmentCode || user?.department_code || '').toUpperCase();
+
+  const isSuperAdmin = userRole === 'SUPER_ADMIN' || roleNameUpper === 'SUPER_ADMIN' || user?.username === 'superadmin';
+  const isCentralManagement =
+    userRole === 'MANAGEMENT' ||
+    roleNameUpper === 'MANAGEMENT' ||
+    userDept === 'EXEC' ||
+    userDept === 'OPERATION' ||
+    userDept === 'OPS';
+
+  const canSwitchBranch = isSuperAdmin || isCentralManagement;
+  const userBranchId = user?.branchId ? Number(user.branchId) : null;
+
+  // For branch users, strictly lock to their assigned branch. Never fallback to branch 1.
+  const initialBranchId = canSwitchBranch
+    ? (propBranchId ? Number(propBranchId) : userBranchId)
+    : userBranchId;
+
+  const [selectedBranchId, setSelectedBranchId] = useState<number | null>(initialBranchId);
   const [branches, setBranches] = useState<any[]>([]);
   const [dashboardData, setDashboardData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'staff' | 'tasks' | 'connections' | 'targets' | 'performance'>('overview');
 
-  // React if propBranchId changes
+  // React if propBranchId changes (only permitted for managers who can switch branch)
   useEffect(() => {
-    if (propBranchId) {
-      setSelectedBranchId(propBranchId);
+    if (canSwitchBranch && propBranchId) {
+      setSelectedBranchId(Number(propBranchId));
+    } else if (!canSwitchBranch && userBranchId) {
+      setSelectedBranchId(userBranchId);
     }
-  }, [propBranchId]);
+  }, [propBranchId, userBranchId, canSwitchBranch]);
 
   // Load branch list for picker if Admin/Management
   useEffect(() => {
+    if (!canSwitchBranch) return;
     const loadBranches = async () => {
       try {
         const res = await api.get('/branches?limit=50');
         if (res.success) {
           setBranches(res.branches || []);
-          if (!propBranchId && !user?.branchId && res.branches.length > 0) {
+          if (!propBranchId && !userBranchId && res.branches.length > 0) {
             setSelectedBranchId(res.branches[0].id);
           }
         }
       } catch {}
     };
     loadBranches();
-  }, [propBranchId, user]);
+  }, [propBranchId, userBranchId, canSwitchBranch]);
 
   const loadBranchDashboard = async (id: number) => {
     setLoading(true);
@@ -138,8 +160,7 @@ export const BranchDashboard: React.FC<BranchDashboardProps> = ({ branchId: prop
     staffRankings = [],
   } = dashboardData || {};
 
-  const userRole = (user?.role || '').toUpperCase().replace(/\s+/g, '_');
-  const canSwitchBranch = userRole === 'SUPER_ADMIN' || userRole === 'MANAGEMENT';
+  const canViewStaff = hasPermission('staff.view') || hasPermission('staff');
 
   return (
     <div className="space-y-6 pb-12">
@@ -147,13 +168,15 @@ export const BranchDashboard: React.FC<BranchDashboardProps> = ({ branchId: prop
       <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-6">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="flex items-start gap-3.5">
-            <button
-              onClick={() => onNavigate?.('branches')}
-              className="mt-1 p-2 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-600 transition-colors shadow-2xs"
-              title="Return to all branches"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </button>
+            {canSwitchBranch && (
+              <button
+                onClick={() => onNavigate?.('branches')}
+                className="mt-1 p-2 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-600 transition-colors shadow-2xs"
+                title="Return to all branches"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+            )}
 
             <div>
               <div className="flex flex-wrap items-center gap-2 mb-1">
@@ -211,13 +234,15 @@ export const BranchDashboard: React.FC<BranchDashboardProps> = ({ branchId: prop
               </div>
             )}
 
-            <button
-              onClick={() => onNavigate?.('branches')}
-              className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition flex items-center gap-1.5"
-            >
-              <Building2 className="w-3.5 h-3.5" />
-              All Branches
-            </button>
+            {canSwitchBranch && (
+              <button
+                onClick={() => onNavigate?.('branches')}
+                className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition flex items-center gap-1.5"
+              >
+                <Building2 className="w-3.5 h-3.5" />
+                All Branches
+              </button>
+            )}
           </div>
         </div>
 
@@ -257,7 +282,7 @@ export const BranchDashboard: React.FC<BranchDashboardProps> = ({ branchId: prop
           subtitle="Branch crew"
           icon={<Users className="w-5 h-5" />}
           variant="purple"
-          onClick={() => setActiveTab('staff')}
+          onClick={canViewStaff ? () => setActiveTab('staff') : undefined}
         />
         <StatCard
           title="Open Tasks"
@@ -386,7 +411,7 @@ export const BranchDashboard: React.FC<BranchDashboardProps> = ({ branchId: prop
         <div className="flex border-b border-slate-200 overflow-x-auto">
           {[
             { key: 'overview', label: 'Overview & Facilities' },
-            { key: 'staff', label: `Staff (${staff?.length || 0})` },
+            ...(canViewStaff ? [{ key: 'staff', label: `Staff (${staff?.length || 0})` }] : []),
             { key: 'tasks', label: `Tasks (${tasks?.length || 0})` },
             { key: 'connections', label: `New Connections (${connections?.length || 0})` },
             { key: 'targets', label: `Targets & KPI (${targets?.length || 0})` },
@@ -534,7 +559,7 @@ export const BranchDashboard: React.FC<BranchDashboardProps> = ({ branchId: prop
           )}
 
           {/* TAB 2: STAFF LIST */}
-          {activeTab === 'staff' && (
+          {activeTab === 'staff' && canViewStaff && (
             <div className="overflow-x-auto">
               {staff.length === 0 ? (
                 <div className="text-center py-10 text-slate-400 text-xs">

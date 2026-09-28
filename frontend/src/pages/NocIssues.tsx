@@ -119,8 +119,8 @@ export const NocIssues: React.FC = () => {
   const fetchAuxiliaryData = async () => {
     try {
       const [branchesRes, staffRes] = await Promise.all([
-        api.branches.getAll(),
-        api.get('/staff'),
+        api.branches.getAll().catch(() => ({ success: false, branches: [] })),
+        api.get('/staff').catch(() => ({ success: false, staff: [] })),
       ]);
       if (branchesRes.success) setBranches(branchesRes.branches || []);
       if (staffRes.success) setStaffList(staffRes.staff || []);

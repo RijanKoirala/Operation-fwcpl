@@ -74,7 +74,7 @@ DB_NAME=fwcpl_operations
 DB_USER=fwcpl_admin
 DB_PASSWORD=YourStrongDatabasePassword123!
 JWT_SECRET=ReplaceWithAStrong64CharRandomSecretKey!
-JWT_EXPIRES_IN=7d
+JWT_EXPIRES_IN=8h
 VITE_API_URL=/api
 ```
 

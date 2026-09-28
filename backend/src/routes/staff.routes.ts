@@ -1,14 +1,14 @@
 import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { db } from '../models/database';
-import { authenticate, requireRoles, checkBranchAccess } from '../middleware/auth';
+import { authenticate, requireRoles, requirePermission, checkBranchAccess } from '../middleware/auth';
 import { logActivity } from '../middleware/audit';
 import { calculateStaffPerformance } from '../services/calculationService';
 
 const router = Router();
 
 // GET /api/staff - List staff
-router.get('/', authenticate, async (req: Request, res: Response) => {
+router.get('/', authenticate, requirePermission('staff.view', 'staff'), async (req: Request, res: Response) => {
   const { branchId, departmentId, designationId, status, search, page = '1', limit = '50' } = req.query;
   const pageNum = parseInt(page as string, 10) || 1;
   const limitNum = parseInt(limit as string, 10) || 50;
@@ -176,7 +176,7 @@ router.get('/admins/list', authenticate, requireRoles('SUPER_ADMIN'), async (req
 });
 
 // GET /api/staff/:id - Detailed Staff Profile
-router.get('/:id', authenticate, async (req: Request, res: Response) => {
+router.get('/:id', authenticate, requirePermission('staff.view', 'staff'), async (req: Request, res: Response) => {
   const staffId = parseInt(req.params.id, 10);
 
   try {
@@ -278,8 +278,8 @@ router.get('/:id', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/staff - Create new staff or admin (SUPER_ADMIN, MANAGEMENT, BRANCH_MANAGER)
-router.post('/', authenticate, requireRoles('SUPER_ADMIN', 'MANAGEMENT', 'BRANCH_MANAGER'), async (req: Request, res: Response) => {
+// POST /api/staff - Create new staff or admin
+router.post('/', authenticate, requirePermission('staff.create', 'staff'), async (req: Request, res: Response) => {
   const {
     employeeId,
     username,
@@ -378,7 +378,7 @@ router.post('/', authenticate, requireRoles('SUPER_ADMIN', 'MANAGEMENT', 'BRANCH
 });
 
 // PUT /api/staff/:id - Update staff or admin
-router.put('/:id', authenticate, requireRoles('SUPER_ADMIN', 'MANAGEMENT', 'BRANCH_MANAGER'), async (req: Request, res: Response) => {
+router.put('/:id', authenticate, requirePermission('staff.edit', 'staff'), async (req: Request, res: Response) => {
   const staffId = parseInt(req.params.id, 10);
   const {
     employeeId,
@@ -478,8 +478,8 @@ router.put('/:id', authenticate, requireRoles('SUPER_ADMIN', 'MANAGEMENT', 'BRAN
   }
 });
 
-// DELETE /api/staff/:id (SUPER_ADMIN only)
-router.delete('/:id', authenticate, requireRoles('SUPER_ADMIN'), async (req: Request, res: Response) => {
+// DELETE /api/staff/:id (SUPER_ADMIN or staff.delete)
+router.delete('/:id', authenticate, requirePermission('staff.delete', 'staff'), async (req: Request, res: Response) => {
   const staffId = parseInt(req.params.id, 10);
 
   try {

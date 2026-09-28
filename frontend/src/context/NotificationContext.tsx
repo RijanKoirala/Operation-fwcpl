@@ -34,6 +34,9 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       fetchNotifications();
       const interval = setInterval(fetchNotifications, 15000); // refresh every 15s
       return () => clearInterval(interval);
+    } else {
+      setNotifications([]);
+      setUnreadCount(0);
     }
   }, [user]);
 

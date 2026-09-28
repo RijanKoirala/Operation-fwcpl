@@ -37,7 +37,7 @@ interface StaffPageProps {
 }
 
 export const Staff: React.FC<StaffPageProps> = ({ onNavigate }) => {
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
   const [activeTab, setActiveTab] = useState<'staff' | 'admins' | 'designations' | 'departments'>('staff');
   const [staffList, setStaffList] = useState<User[]>([]);
   const [designations, setDesignations] = useState<Designation[]>([]);
@@ -361,6 +361,26 @@ export const Staff: React.FC<StaffPageProps> = ({ onNavigate }) => {
     }
   };
 
+  if (!hasPermission('staff.view') && !hasPermission('staff')) {
+    return (
+      <div className="max-w-md mx-auto mt-20 p-8 bg-white rounded-2xl border border-slate-200 shadow-sm text-center">
+        <div className="w-12 h-12 bg-rose-50 text-rose-600 rounded-2xl flex items-center justify-center mx-auto mb-4 font-bold text-xl">
+          🔒
+        </div>
+        <h3 className="text-base font-bold text-slate-900 mb-1">Access Restricted</h3>
+        <p className="text-xs text-slate-500 mb-6 leading-relaxed">
+          You do not have permission to access the <span className="font-semibold text-slate-800">Staff Management</span> module. Please contact your system administrator.
+        </p>
+        <button
+          onClick={() => onNavigate?.('dashboard')}
+          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer"
+        >
+          Back to Dashboard
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 pb-12">
       {/* Header */}
@@ -400,7 +420,7 @@ export const Staff: React.FC<StaffPageProps> = ({ onNavigate }) => {
             </button>
           )}
 
-          {['SUPER_ADMIN', 'MANAGEMENT', 'BRANCH_MANAGER'].includes(user?.role || '') && activeTab === 'staff' && (
+          {(hasPermission('staff.create') || hasPermission('staff')) && activeTab === 'staff' && (
             <button
               onClick={() => setShowAddStaffModal(true)}
               className="px-4 py-2 bg-brand-600 text-white font-bold text-xs rounded-xl hover:bg-brand-700 shadow-sm flex items-center gap-1.5 cursor-pointer"

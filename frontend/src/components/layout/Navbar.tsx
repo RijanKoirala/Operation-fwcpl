@@ -145,7 +145,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   {user?.fullName || user?.name || user?.username}
                 </span>
                 <span className="block text-[11px] text-slate-400">
-                  {user?.branchName || user?.branch_name || 'Headquarters'}
+                  {user?.branchName || user?.branch_name || (user?.branchId || user?.branch_id ? 'Branch Office' : 'Headquarters')}
                 </span>
               </div>
             </button>

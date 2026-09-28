@@ -52,8 +52,9 @@ CREATE TABLE IF NOT EXISTS users (
     role VARCHAR(50) NOT NULL DEFAULT 'STAFF', -- 'SUPER_ADMIN', 'MANAGEMENT', 'BRANCH_MANAGER', 'STAFF'
     role_id INTEGER,
     status VARCHAR(30) NOT NULL DEFAULT 'Active', -- 'Active', 'Inactive', 'Disabled', 'On Leave'
-    permissions JSONB DEFAULT '{"tasks": true, "connections": true, "tickets": true, "followups": true, "staff": true, "instructions": true, "targets": true, "noc": true, "reports": true}'::jsonb,
-    allowed_branches TEXT DEFAULT 'ALL', -- 'ALL' or comma-separated branch ids e.g. '1,2'
+    permissions JSONB DEFAULT '{}'::jsonb,
+    allowed_branches TEXT DEFAULT NULL,
+    token_version INTEGER DEFAULT 1,
     profile_photo VARCHAR(255),
     notes TEXT,
     last_login TIMESTAMP,
@@ -105,6 +106,16 @@ CREATE TABLE IF NOT EXISTS user_branches (
     branch_id INTEGER REFERENCES branches(id) ON DELETE CASCADE,
     UNIQUE(user_id, branch_id)
 );
+
+CREATE TABLE IF NOT EXISTS invalidated_tokens (
+    token_hash VARCHAR(64) PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    invalidated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_invalidated_tokens_user ON invalidated_tokens(user_id);
+CREATE INDEX IF NOT EXISTS idx_invalidated_tokens_expires ON invalidated_tokens(expires_at);
 
 -- Add foreign key constraint for manager_id on branches
 -- ALTER TABLE branches ADD CONSTRAINT fk_branch_manager FOREIGN KEY (manager_id) REFERENCES users(id) ON DELETE SET NULL;

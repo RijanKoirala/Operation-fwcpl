@@ -17,6 +17,7 @@ import {
   Megaphone,
 } from 'lucide-react';
 import { api } from '../api/client';
+import { useAuth } from '../context/AuthContext';
 import { StatCard } from '../components/common/StatCard';
 import { TaskPodium } from '../components/podium/TaskPodium';
 import { BranchPodium } from '../components/podium/BranchPodium';
@@ -39,6 +40,9 @@ interface DashboardProps {
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
+  const { hasPermission } = useAuth();
+  const canViewStaff = hasPermission('staff.view') || hasPermission('staff');
+
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [taskPeriod, setTaskPeriod] = useState('month');
@@ -161,7 +165,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
           subtitle="Across all departments"
           icon={<Users className="w-6 h-6" />}
           variant="purple"
-          onClick={() => onNavigate?.('staff')}
+          onClick={canViewStaff ? () => onNavigate?.('staff') : undefined}
         />
         <StatCard
           title="Active Tasks"
@@ -372,20 +376,22 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
             >
               Branch Leaderboard
             </button>
-            <button
-              onClick={() => setLeaderboardTab('staff')}
-              className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${
-                leaderboardTab === 'staff'
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-900'
-              }`}
-            >
-              Staff Leaderboard
-            </button>
+            {canViewStaff && (
+              <button
+                onClick={() => setLeaderboardTab('staff')}
+                className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                  leaderboardTab === 'staff'
+                    ? 'bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                Staff Leaderboard
+              </button>
+            )}
           </div>
         </div>
 
-        {leaderboardTab === 'branch' ? (
+        {leaderboardTab === 'branch' || !canViewStaff ? (
           <BranchLeaderboard branches={leaderboards?.branches || []} onNavigate={onNavigate} />
         ) : (
           <StaffLeaderboard staff={leaderboards?.staff || []} />

@@ -131,7 +131,7 @@ export const Pods: React.FC<PodsProps> = ({ onNavigate, initialPodId }) => {
   const canCreatePod = hasPermission('pods.create');
   const canEditPod = hasPermission('pods.edit');
   const canDeletePod = hasPermission('pods.delete');
-  const canViewItems = hasPermission('pods.items.view') || hasPermission('pods.view');
+  const canViewItems = hasPermission('pods.items.view');
   const canCreateItem = hasPermission('pods.items.create');
   const canEditItem = hasPermission('pods.items.edit');
   const canDeleteItem = hasPermission('pods.items.delete');
@@ -228,12 +228,12 @@ export const Pods: React.FC<PodsProps> = ({ onNavigate, initialPodId }) => {
   useEffect(() => {
     if (selectedPodId) {
       fetchPodDetails(selectedPodId);
-      if (activeTab === 'items') fetchPodItems(selectedPodId);
-      if (activeTab === 'history') fetchPodHistory(selectedPodId);
+      if (activeTab === 'items' && canViewItems) fetchPodItems(selectedPodId);
+      if (activeTab === 'history' && canViewHistory) fetchPodHistory(selectedPodId);
     } else {
       setSelectedPod(null);
     }
-  }, [selectedPodId, activeTab]);
+  }, [selectedPodId, activeTab, canViewItems, canViewHistory]);
 
   // Handle Open Create POD Modal
   const openCreatePodModal = () => {
@@ -682,32 +682,36 @@ export const Pods: React.FC<PodsProps> = ({ onNavigate, initialPodId }) => {
             <span>Overview</span>
           </button>
 
-          <button
-            onClick={() => setActiveTab('items')}
-            className={`pb-3 text-sm font-bold transition flex items-center gap-2 cursor-pointer border-b-2 ${
-              activeTab === 'items'
-                ? 'border-indigo-600 text-indigo-600'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <Package className="w-4 h-4" />
-            <span>Items & Equipment</span>
-            <span className="px-2 py-0.5 rounded-full text-xs bg-slate-100 text-slate-700 font-bold">
-              {selectedPod.items_count || 0}
-            </span>
-          </button>
+          {canViewItems && (
+            <button
+              onClick={() => setActiveTab('items')}
+              className={`pb-3 text-sm font-bold transition flex items-center gap-2 cursor-pointer border-b-2 ${
+                activeTab === 'items'
+                  ? 'border-indigo-600 text-indigo-600'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <Package className="w-4 h-4" />
+              <span>Items & Equipment</span>
+              <span className="px-2 py-0.5 rounded-full text-xs bg-slate-100 text-slate-700 font-bold">
+                {selectedPod.items_count || 0}
+              </span>
+            </button>
+          )}
 
-          <button
-            onClick={() => setActiveTab('history')}
-            className={`pb-3 text-sm font-bold transition flex items-center gap-2 cursor-pointer border-b-2 ${
-              activeTab === 'history'
-                ? 'border-indigo-600 text-indigo-600'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <History className="w-4 h-4" />
-            <span>History & Audit Trail</span>
-          </button>
+          {canViewHistory && (
+            <button
+              onClick={() => setActiveTab('history')}
+              className={`pb-3 text-sm font-bold transition flex items-center gap-2 cursor-pointer border-b-2 ${
+                activeTab === 'history'
+                  ? 'border-indigo-600 text-indigo-600'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <History className="w-4 h-4" />
+              <span>History & Audit Trail</span>
+            </button>
+          )}
         </div>
 
         {/* TAB 1: OVERVIEW */}
@@ -1093,7 +1097,7 @@ export const Pods: React.FC<PodsProps> = ({ onNavigate, initialPodId }) => {
         )}
 
         {/* TAB 2: ITEMS */}
-        {activeTab === 'items' && (
+        {activeTab === 'items' && canViewItems && (
           <div className="space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white rounded-2xl border border-slate-200/80 p-4 shadow-2xs">
               <div className="flex items-center gap-3">
@@ -1224,7 +1228,7 @@ export const Pods: React.FC<PodsProps> = ({ onNavigate, initialPodId }) => {
         )}
 
         {/* TAB 3: HISTORY */}
-        {activeTab === 'history' && (
+        {activeTab === 'history' && canViewHistory && (
           <div className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-2xs">
             <h3 className="text-sm font-bold text-slate-900 mb-4 pb-3 border-b border-slate-100 flex items-center gap-2">
               <History className="w-4 h-4 text-indigo-600" />
