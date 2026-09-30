@@ -12,6 +12,7 @@ import {
   Layers,
   ArrowRight,
   Target,
+  Download,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -20,6 +21,13 @@ import { StatusBadge } from '../components/common/Badge';
 import { StatCard } from '../components/common/StatCard';
 import { Modal } from '../components/common/Modal';
 import { MultiStaffSelect, AssignedStaffPills } from '../components/common/MultiStaffSelect';
+import {
+  DatePeriodFilter,
+  DatePeriod,
+  DateMode,
+  formatDateTime,
+  getDateRangeForPeriod,
+} from '../components/common/DatePeriodFilter';
 
 export const Connections: React.FC = () => {
   const { user } = useAuth();
@@ -32,6 +40,17 @@ export const Connections: React.FC = () => {
   const [staffFilter, setStaffFilter] = useState('');
   const [branches, setBranches] = useState<any[]>([]);
   const [staffMembers, setStaffMembers] = useState<any[]>([]);
+
+  // Date filtering state
+  const [period, setPeriod] = useState<DatePeriod>('all');
+  const [specificDate, setSpecificDate] = useState<string>('');
+  const [customStart, setCustomStart] = useState<string>('');
+  const [customEnd, setCustomEnd] = useState<string>('');
+  const [dateMode, setDateMode] = useState<DateMode>('requested');
+
+  // Sorting state (default: Newest Requested Date first -> created_at DESC)
+  const [sortField, setSortField] = useState<'created_at' | 'completion_date'>('created_at');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedConn, setSelectedConn] = useState<Connection | null>(null);
@@ -95,6 +114,15 @@ export const Connections: React.FC = () => {
     'Completed',
   ];
 
+  const toggleSort = (field: 'created_at' | 'completion_date') => {
+    if (sortField === field) {
+      setSortOrder(prev => (prev === 'desc' ? 'asc' : 'desc'));
+    } else {
+      setSortField(field);
+      setSortOrder('desc');
+    }
+  };
+
   const fetchConnections = async () => {
     setLoading(true);
     try {
@@ -102,8 +130,20 @@ export const Connections: React.FC = () => {
         search,
         status: statusFilter,
         branchId: branchFilter,
+        sortBy: sortField,
+        sortOrder,
+        dateMode,
       };
       if (staffFilter) qObj.staffId = staffFilter;
+
+      const { startDate, endDate } = getDateRangeForPeriod(period, specificDate, customStart, customEnd);
+      if (period !== 'all') {
+        qObj.period = period;
+        if (startDate) qObj.startDate = startDate;
+        if (endDate) qObj.endDate = endDate;
+        if (period === 'specific_date' && specificDate) qObj.date = specificDate;
+      }
+
       const q = new URLSearchParams(qObj).toString();
 
       const [cRes, mRes] = await Promise.all([
@@ -118,6 +158,53 @@ export const Connections: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const exportConnectionsToCsv = () => {
+    if (connections.length === 0) return;
+    const headers = [
+      'Connection ID',
+      'Customer Name',
+      'Phone',
+      'Address',
+      'Branch',
+      'Package Plan',
+      'Connection Type',
+      'Assigned Staff',
+      'Requested Date',
+      'Completed Date',
+      'Stage',
+      'Remarks',
+    ];
+    const rows = connections.map(c => {
+      const staffNames = (c.assigned_staff && c.assigned_staff.length > 0)
+        ? c.assigned_staff.map(s => s.full_name || s.fullName).join(', ')
+        : (c.assigned_staff_name || 'Unassigned');
+      return [
+        c.connection_id,
+        c.customer_name,
+        c.phone,
+        c.address,
+        c.branch_name,
+        c.package_plan,
+        c.connection_type,
+        staffNames,
+        formatDateTime(c.created_at || c.request_date),
+        c.status === 'Completed' ? formatDateTime(c.completion_date, c.updated_at) : '—',
+        c.status,
+        c.remarks || '',
+      ].map(val => `"${String(val || '').replace(/"/g, '""')}"`);
+    });
+
+    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `connections_export_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   useEffect(() => {
@@ -136,7 +223,7 @@ export const Connections: React.FC = () => {
 
   useEffect(() => {
     fetchConnections();
-  }, [search, statusFilter, branchFilter, staffFilter]);
+  }, [search, statusFilter, branchFilter, staffFilter, period, specificDate, customStart, customEnd, dateMode, sortField, sortOrder]);
 
   useEffect(() => {
     if (selectedConn && (selectedConn.status === 'Completed' || updateStatus === 'Completed')) {
@@ -293,8 +380,8 @@ export const Connections: React.FC = () => {
       </div>
 
       {/* Filter Bar */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-col sm:flex-row gap-3 items-center justify-between">
-        <div className="relative w-full sm:w-72">
+      <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-col lg:flex-row gap-3 items-center justify-between">
+        <div className="relative w-full lg:w-72">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
           <input
             type="text"
@@ -305,11 +392,27 @@ export const Connections: React.FC = () => {
           />
         </div>
 
-        <div className="flex items-center gap-2 w-full sm:w-auto">
+        <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto">
+          {/* Date Period Filter with Date Mode */}
+          <DatePeriodFilter
+            period={period}
+            onPeriodChange={setPeriod}
+            specificDate={specificDate}
+            onSpecificDateChange={setSpecificDate}
+            startDate={customStart}
+            onStartDateChange={setCustomStart}
+            endDate={customEnd}
+            onEndDateChange={setCustomEnd}
+            showDateMode={true}
+            dateMode={dateMode}
+            onDateModeChange={setDateMode}
+            dateLabel={dateMode === 'completed' ? 'Completed Date' : 'Requested Date'}
+          />
+
           <select
             value={statusFilter}
             onChange={e => setStatusFilter(e.target.value)}
-            className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-xl px-3 py-2 font-medium"
+            className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-xl px-3 py-2 font-medium cursor-pointer"
           >
             <option value="">All Pipeline Stages</option>
             {pipelineStages.map(s => (
@@ -323,7 +426,7 @@ export const Connections: React.FC = () => {
             <select
               value={branchFilter}
               onChange={e => setBranchFilter(e.target.value)}
-              className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-xl px-3 py-2 font-medium"
+              className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-xl px-3 py-2 font-medium cursor-pointer"
             >
               <option value="">All Branches</option>
               {branches.map(b => (
@@ -335,15 +438,25 @@ export const Connections: React.FC = () => {
           <select
             value={staffFilter}
             onChange={e => setStaffFilter(e.target.value)}
-            className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-xl px-3 py-2 font-medium max-w-[150px] truncate"
+            className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-xl px-3 py-2 font-medium max-w-[150px] truncate cursor-pointer"
           >
             <option value="">All Staff</option>
             {staffMembers
-              .filter(s => !branchFilter || Number(s.branch_id) === Number(branchFilter))
+              .filter(s => !branchFilter || Number(s.branch_id || s.branchId) === Number(branchFilter))
               .map(s => (
-                <option key={s.id} value={s.id}>{s.full_name}</option>
+                <option key={s.id} value={s.id}>{s.full_name || s.fullName}</option>
               ))}
           </select>
+
+          <button
+            onClick={exportConnectionsToCsv}
+            disabled={connections.length === 0}
+            className="flex items-center gap-1.5 px-3 py-2 bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-semibold rounded-xl transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Export filtered connections to CSV"
+          >
+            <Download className="w-3.5 h-3.5 text-slate-500" />
+            <span className="hidden xl:inline">Export CSV</span>
+          </button>
         </div>
       </div>
 
@@ -357,7 +470,30 @@ export const Connections: React.FC = () => {
               <th className="py-3.5 px-4">Branch</th>
               <th className="py-3.5 px-4">Package Plan</th>
               <th className="py-3.5 px-4">Assigned Staff</th>
-              <th className="py-3.5 px-4">Request Date</th>
+              <th
+                onClick={() => toggleSort('created_at')}
+                className="py-3.5 px-4 cursor-pointer hover:bg-slate-100 transition-colors select-none text-slate-700 whitespace-nowrap"
+                title="Click to sort by Requested Date (Newest / Oldest)"
+              >
+                <div className="flex items-center gap-1.5">
+                  <span>Requested Date</span>
+                  <span className="text-[10px] text-brand-600 font-bold">
+                    {sortField === 'created_at' ? (sortOrder === 'asc' ? '▲ Oldest' : '▼ Newest') : '↕'}
+                  </span>
+                </div>
+              </th>
+              <th
+                onClick={() => toggleSort('completion_date')}
+                className="py-3.5 px-4 cursor-pointer hover:bg-slate-100 transition-colors select-none text-slate-700 whitespace-nowrap"
+                title="Click to sort by Completed Date"
+              >
+                <div className="flex items-center gap-1.5">
+                  <span>Completed Date</span>
+                  <span className="text-[10px] text-brand-600 font-bold">
+                    {sortField === 'completion_date' ? (sortOrder === 'asc' ? '▲ Oldest' : '▼ Newest') : '↕'}
+                  </span>
+                </div>
+              </th>
               <th className="py-3.5 px-4">Stage</th>
               <th className="py-3.5 px-4 text-right">Action</th>
             </tr>
@@ -378,7 +514,14 @@ export const Connections: React.FC = () => {
                 <td className="py-3.5 px-4 font-medium text-slate-700">
                   <AssignedStaffPills staff={c.assigned_staff} fallbackName={c.assigned_staff_name} />
                 </td>
-                <td className="py-3.5 px-4 text-xs text-slate-500">{c.request_date}</td>
+                <td className="py-3.5 px-4 text-xs font-medium text-slate-700 whitespace-nowrap">
+                  {formatDateTime(c.created_at || c.request_date)}
+                </td>
+                <td className="py-3.5 px-4 text-xs font-medium text-slate-700 whitespace-nowrap">
+                  {c.status === 'Completed' ? formatDateTime(c.completion_date, c.updated_at) : (
+                    <span className="text-slate-300 font-bold">—</span>
+                  )}
+                </td>
                 <td className="py-3.5 px-4">
                   <div className="flex flex-col gap-1 items-start">
                     <StatusBadge status={c.status} />
@@ -395,14 +538,15 @@ export const Connections: React.FC = () => {
                       setSelectedConn(c);
                       setUpdateStatus(c.status);
                       setUpdateRemarks(c.remarks || '');
-                      setUpdateCompletionDate(c.completion_date || (c.status === 'Completed' ? new Date().toISOString().split('T')[0] : ''));
+                      const rawCompDate = c.completion_date ? String(c.completion_date).split('T')[0].split(' ')[0] : '';
+                      setUpdateCompletionDate(rawCompDate || (c.status === 'Completed' ? new Date().toISOString().split('T')[0] : ''));
                       const currentIds = (c.assigned_staff && c.assigned_staff.length > 0)
                         ? c.assigned_staff.map(s => (s.staff_id || s.id) as number).filter(Boolean)
                         : (c.assigned_staff_id ? [c.assigned_staff_id] : []);
                       setUpdateStaffIds(currentIds);
                       setShowStatusModal(true);
                     }}
-                    className="text-xs font-bold text-brand-600 hover:bg-brand-50 px-2.5 py-1 rounded-lg border border-brand-200 transition-colors"
+                    className="text-xs font-bold text-brand-600 hover:bg-brand-50 px-2.5 py-1 rounded-lg border border-brand-200 transition-colors cursor-pointer"
                   >
                     Advance Stage
                   </button>
@@ -411,7 +555,7 @@ export const Connections: React.FC = () => {
             ))}
             {connections.length === 0 && !loading && (
               <tr>
-                <td colSpan={8} className="py-8 text-center text-slate-400">
+                <td colSpan={9} className="py-8 text-center text-slate-400">
                   No connection records found.
                 </td>
               </tr>
@@ -437,7 +581,8 @@ export const Connections: React.FC = () => {
                   const val = e.target.value;
                   setUpdateStatus(val);
                   if (val === 'Completed' && !updateCompletionDate) {
-                    setUpdateCompletionDate(selectedConn.completion_date || new Date().toISOString().split('T')[0]);
+                    const rawComp = selectedConn.completion_date ? String(selectedConn.completion_date).split('T')[0].split(' ')[0] : '';
+                    setUpdateCompletionDate(rawComp || new Date().toISOString().split('T')[0]);
                   }
                 }}
                 className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-bold"

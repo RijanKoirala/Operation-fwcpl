@@ -232,7 +232,8 @@ class DatabaseManager {
         ALTER TABLE noc_incidents ADD COLUMN IF NOT EXISTS resolution_notes TEXT;
         ALTER TABLE noc_incidents ADD COLUMN IF NOT EXISTS root_cause_analysis TEXT;
 
-        ALTER TABLE connections ADD COLUMN IF NOT EXISTS completion_date DATE;
+        ALTER TABLE connections ADD COLUMN IF NOT EXISTS completion_date TIMESTAMP;
+        ALTER TABLE connections ALTER COLUMN completion_date TYPE TIMESTAMP;
 
         ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '{}'::jsonb;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS allowed_branches TEXT DEFAULT NULL;

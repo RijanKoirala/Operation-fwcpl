@@ -83,7 +83,24 @@ function parseStaffIds(body: any): number[] {
 
 // GET /api/connections
 router.get('/', authenticate, async (req: Request, res: Response) => {
-  const { branchId, assignedStaffId, staffId, myConnections, status, connectionType, search, page = '1', limit = '50' } = req.query;
+  const {
+    branchId,
+    assignedStaffId,
+    staffId,
+    myConnections,
+    status,
+    connectionType,
+    search,
+    page = '1',
+    limit = '50',
+    period,
+    startDate,
+    endDate,
+    date,
+    dateMode = 'requested',
+    sortBy = 'created_at',
+    sortOrder = 'desc',
+  } = req.query;
   const pageNum = parseInt(page as string, 10) || 1;
   const limitNum = parseInt(limit as string, 10) || 50;
   const offset = (pageNum - 1) * limitNum;
@@ -133,10 +150,65 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
       );
     }
 
+    // Date filtering: dateMode 'requested' (default) filters on COALESCE(c.created_at::date, c.request_date); 'completed' filters on c.completion_date
+    const dateExpr = dateMode === 'completed'
+      ? `c.completion_date`
+      : `COALESCE(c.created_at::date, c.request_date)`;
+
+    if (dateMode === 'completed') {
+      whereClauses.push(`c.completion_date IS NOT NULL`);
+    }
+
+    if (date) {
+      params.push(date);
+      whereClauses.push(`DATE(${dateExpr}) = $${params.length}`);
+    } else if (startDate && endDate) {
+      params.push(startDate);
+      whereClauses.push(`DATE(${dateExpr}) >= $${params.length}`);
+      params.push(endDate);
+      whereClauses.push(`DATE(${dateExpr}) <= $${params.length}`);
+    } else if (startDate) {
+      params.push(startDate);
+      whereClauses.push(`DATE(${dateExpr}) >= $${params.length}`);
+    } else if (endDate) {
+      params.push(endDate);
+      whereClauses.push(`DATE(${dateExpr}) <= $${params.length}`);
+    } else if (period && period !== 'all') {
+      if (period === 'today') {
+        whereClauses.push(`DATE(${dateExpr}) = CURRENT_DATE`);
+      } else if (period === 'yesterday') {
+        whereClauses.push(`DATE(${dateExpr}) = CURRENT_DATE - INTERVAL '1 day'`);
+      } else if (period === 'this_week') {
+        whereClauses.push(`DATE(${dateExpr}) >= date_trunc('week', CURRENT_DATE)::date AND DATE(${dateExpr}) <= (date_trunc('week', CURRENT_DATE) + INTERVAL '6 days')::date`);
+      } else if (period === 'last_week') {
+        whereClauses.push(`DATE(${dateExpr}) >= (date_trunc('week', CURRENT_DATE) - INTERVAL '7 days')::date AND DATE(${dateExpr}) < date_trunc('week', CURRENT_DATE)::date`);
+      } else if (period === 'this_month') {
+        whereClauses.push(`DATE(${dateExpr}) >= date_trunc('month', CURRENT_DATE)::date AND DATE(${dateExpr}) <= (date_trunc('month', CURRENT_DATE) + INTERVAL '1 month - 1 day')::date`);
+      } else if (period === 'last_month') {
+        whereClauses.push(`DATE(${dateExpr}) >= (date_trunc('month', CURRENT_DATE) - INTERVAL '1 month')::date AND DATE(${dateExpr}) < date_trunc('month', CURRENT_DATE)::date`);
+      }
+    }
+
     const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
 
     const countRes = await db.query(`SELECT COUNT(*) as count FROM connections c ${whereSql}`, params);
     const total = parseInt(countRes.rows[0].count, 10);
+
+    // Sorting: Default Newest Requested Date first (created_at / request_date DESC)
+    const direction = String(sortOrder).toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+    let orderClause = `COALESCE(c.created_at, c.request_date::timestamp) ${direction}, c.id ${direction}`;
+
+    if (sortBy === 'completion_date' || sortBy === 'completed_date' || sortBy === 'completionDate') {
+      orderClause = `c.completion_date ${direction} NULLS LAST, c.id ${direction}`;
+    } else if (sortBy === 'created_at' || sortBy === 'requested_date' || sortBy === 'request_date' || sortBy === 'requestedDate') {
+      orderClause = `COALESCE(c.created_at, c.request_date::timestamp) ${direction}, c.id ${direction}`;
+    } else if (sortBy === 'customer_name' || sortBy === 'customerName') {
+      orderClause = `c.customer_name ${direction}, c.id ${direction}`;
+    } else if (sortBy === 'status') {
+      orderClause = `c.status ${direction}, c.id ${direction}`;
+    } else if (sortBy === 'connection_id' || sortBy === 'connectionId') {
+      orderClause = `c.id ${direction}`;
+    }
 
     const query = `
       SELECT c.*,
@@ -146,7 +218,7 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
       LEFT JOIN branches b ON c.branch_id = b.id
       LEFT JOIN users u ON c.assigned_staff_id = u.id
       ${whereSql}
-      ORDER BY c.request_date DESC, c.id DESC
+      ORDER BY ${orderClause}
       LIMIT ${limitNum} OFFSET ${offset}
     `;
 
@@ -472,10 +544,19 @@ router.put('/:id', authenticate, async (req: Request, res: Response) => {
 
     const newStatus = status || current.status;
     let finalCompletionDate = current.completion_date;
-    if (completionDate !== undefined) {
-      finalCompletionDate = completionDate;
+    if (completionDate !== undefined && completionDate !== null && completionDate !== '') {
+      if (typeof completionDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(completionDate)) {
+        const todayStr = new Date().toISOString().split('T')[0];
+        if (completionDate === todayStr) {
+          finalCompletionDate = new Date().toISOString();
+        } else {
+          finalCompletionDate = `${completionDate} 12:00:00`;
+        }
+      } else {
+        finalCompletionDate = completionDate;
+      }
     } else if (newStatus === 'Completed') {
-      finalCompletionDate = current.completion_date || activationDate || installationDate || new Date().toISOString().split('T')[0];
+      finalCompletionDate = current.completion_date || activationDate || installationDate || new Date().toISOString();
     }
 
     const result = await db.query(

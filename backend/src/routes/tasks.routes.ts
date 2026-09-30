@@ -79,7 +79,24 @@ function parseStaffIds(body: any): number[] {
 
 // GET /api/tasks - List tasks
 router.get('/', authenticate, requirePermission('tasks.view'), async (req: Request, res: Response) => {
-  const { branchId, assignedToId, staffId, myTasks, status, priority, category, search, page = '1', limit = '50' } = req.query;
+  const {
+    branchId,
+    assignedToId,
+    staffId,
+    myTasks,
+    status,
+    priority,
+    category,
+    search,
+    page = '1',
+    limit = '50',
+    period,
+    startDate,
+    endDate,
+    date,
+    sortBy = 'created_at',
+    sortOrder = 'desc',
+  } = req.query;
   const pageNum = parseInt(page as string, 10) || 1;
   const limitNum = parseInt(limit as string, 10) || 50;
   const offset = (pageNum - 1) * limitNum;
@@ -138,10 +155,59 @@ router.get('/', authenticate, requirePermission('tasks.view'), async (req: Reque
       );
     }
 
+    // Date filtering on Task CREATED DATE (t.created_at)
+    if (date) {
+      params.push(date);
+      whereClauses.push(`DATE(t.created_at) = $${params.length}`);
+    } else if (startDate && endDate) {
+      params.push(startDate);
+      whereClauses.push(`DATE(t.created_at) >= $${params.length}`);
+      params.push(endDate);
+      whereClauses.push(`DATE(t.created_at) <= $${params.length}`);
+    } else if (startDate) {
+      params.push(startDate);
+      whereClauses.push(`DATE(t.created_at) >= $${params.length}`);
+    } else if (endDate) {
+      params.push(endDate);
+      whereClauses.push(`DATE(t.created_at) <= $${params.length}`);
+    } else if (period && period !== 'all') {
+      if (period === 'today') {
+        whereClauses.push(`DATE(t.created_at) = CURRENT_DATE`);
+      } else if (period === 'yesterday') {
+        whereClauses.push(`DATE(t.created_at) = CURRENT_DATE - INTERVAL '1 day'`);
+      } else if (period === 'this_week') {
+        whereClauses.push(`DATE(t.created_at) >= date_trunc('week', CURRENT_DATE)::date AND DATE(t.created_at) <= (date_trunc('week', CURRENT_DATE) + INTERVAL '6 days')::date`);
+      } else if (period === 'last_week') {
+        whereClauses.push(`DATE(t.created_at) >= (date_trunc('week', CURRENT_DATE) - INTERVAL '7 days')::date AND DATE(t.created_at) < date_trunc('week', CURRENT_DATE)::date`);
+      } else if (period === 'this_month') {
+        whereClauses.push(`DATE(t.created_at) >= date_trunc('month', CURRENT_DATE)::date AND DATE(t.created_at) <= (date_trunc('month', CURRENT_DATE) + INTERVAL '1 month - 1 day')::date`);
+      } else if (period === 'last_month') {
+        whereClauses.push(`DATE(t.created_at) >= (date_trunc('month', CURRENT_DATE) - INTERVAL '1 month')::date AND DATE(t.created_at) < date_trunc('month', CURRENT_DATE)::date`);
+      }
+    }
+
     const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
 
     const countRes = await db.query(`SELECT COUNT(*) as count FROM tasks t ${whereSql}`, params);
     const total = parseInt(countRes.rows[0].count, 10);
+
+    // Sorting: Default Newest Task First (created_at DESC)
+    const direction = String(sortOrder).toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+    let orderClause = `t.created_at ${direction}, t.id ${direction}`;
+
+    if (sortBy === 'created_at' || sortBy === 'createdAt') {
+      orderClause = `t.created_at ${direction}, t.id ${direction}`;
+    } else if (sortBy === 'due_date' || sortBy === 'dueDate') {
+      orderClause = `t.due_date ${direction}, t.id ${direction}`;
+    } else if (sortBy === 'priority') {
+      orderClause = `CASE t.priority WHEN 'Urgent' THEN 1 WHEN 'High' THEN 2 WHEN 'Medium' THEN 3 ELSE 4 END ${direction}, t.created_at DESC`;
+    } else if (sortBy === 'title') {
+      orderClause = `t.title ${direction}, t.id ${direction}`;
+    } else if (sortBy === 'status') {
+      orderClause = `t.status ${direction}, t.created_at DESC`;
+    } else if (sortBy === 'task_id' || sortBy === 'taskId') {
+      orderClause = `t.id ${direction}`;
+    }
 
     const query = `
       SELECT t.*,
@@ -158,14 +224,7 @@ router.get('/', authenticate, requirePermission('tasks.view'), async (req: Reque
       LEFT JOIN users u ON t.assigned_to_id = u.id
       LEFT JOIN users c ON t.created_by_id = c.id
       ${whereSql}
-      ORDER BY
-        CASE t.priority
-          WHEN 'Urgent' THEN 1
-          WHEN 'High' THEN 2
-          WHEN 'Medium' THEN 3
-          ELSE 4
-        END,
-        t.due_date ASC
+      ORDER BY ${orderClause}
       LIMIT ${limitNum} OFFSET ${offset}
     `;
 

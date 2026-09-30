@@ -14,6 +14,7 @@ import {
   RotateCcw,
   UserCheck,
   Users,
+  Download,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -21,6 +22,12 @@ import { Task, TaskComment, TaskHistory } from '../types';
 import { StatusBadge, PriorityBadge } from '../components/common/Badge';
 import { Modal } from '../components/common/Modal';
 import { MultiStaffSelect, AssignedStaffPills } from '../components/common/MultiStaffSelect';
+import {
+  DatePeriodFilter,
+  DatePeriod,
+  formatDateTime,
+  getDateRangeForPeriod,
+} from '../components/common/DatePeriodFilter';
 
 export const Tasks: React.FC = () => {
   const { user } = useAuth();
@@ -33,6 +40,16 @@ export const Tasks: React.FC = () => {
   const [staffFilter, setStaffFilter] = useState('');
   const [branches, setBranches] = useState<any[]>([]);
   const [staffMembers, setStaffMembers] = useState<any[]>([]);
+
+  // Date filtering state
+  const [period, setPeriod] = useState<DatePeriod>('all');
+  const [specificDate, setSpecificDate] = useState<string>('');
+  const [customStart, setCustomStart] = useState<string>('');
+  const [customEnd, setCustomEnd] = useState<string>('');
+
+  // Sorting state (default: Newest task first -> created_at DESC)
+  const [sortField, setSortField] = useState<'created_at'>('created_at');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
   // Modals & Panels
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -85,6 +102,15 @@ export const Tasks: React.FC = () => {
     setShowCreateModal(true);
   };
 
+  const toggleSort = (field: 'created_at') => {
+    if (sortField === field) {
+      setSortOrder(prev => (prev === 'desc' ? 'asc' : 'desc'));
+    } else {
+      setSortField(field);
+      setSortOrder('desc');
+    }
+  };
+
   const fetchTasks = async () => {
     setLoading(true);
     try {
@@ -93,8 +119,19 @@ export const Tasks: React.FC = () => {
         status: statusFilter,
         priority: priorityFilter,
         branchId: branchFilter,
+        sortBy: sortField,
+        sortOrder,
       };
       if (staffFilter) qObj.staffId = staffFilter;
+
+      const { startDate, endDate } = getDateRangeForPeriod(period, specificDate, customStart, customEnd);
+      if (period !== 'all') {
+        qObj.period = period;
+        if (startDate) qObj.startDate = startDate;
+        if (endDate) qObj.endDate = endDate;
+        if (period === 'specific_date' && specificDate) qObj.date = specificDate;
+      }
+
       const q = new URLSearchParams(qObj).toString();
       const res = await api.get(`/tasks?${q}`);
       if (res.success) setTasks(res.tasks);
@@ -103,6 +140,37 @@ export const Tasks: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const exportTasksToCsv = () => {
+    if (tasks.length === 0) return;
+    const headers = ['Task ID', 'Title', 'Category', 'Branch', 'Assigned Staff', 'Priority', 'Created Date', 'Due Date', 'Status'];
+    const rows = tasks.map(t => {
+      const staffNames = (t.assigned_staff && t.assigned_staff.length > 0)
+        ? t.assigned_staff.map(s => s.full_name || s.fullName).join(', ')
+        : (t.assigned_to_name || 'Unassigned');
+      return [
+        t.task_id,
+        t.title,
+        t.category,
+        t.branch_name,
+        staffNames,
+        t.priority,
+        formatDateTime(t.created_at),
+        t.due_date,
+        t.status,
+      ].map(val => `"${String(val || '').replace(/"/g, '""')}"`);
+    });
+
+    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `tasks_export_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const fetchMeta = async () => {
@@ -122,7 +190,7 @@ export const Tasks: React.FC = () => {
 
   useEffect(() => {
     fetchTasks();
-  }, [search, statusFilter, priorityFilter, branchFilter, staffFilter]);
+  }, [search, statusFilter, priorityFilter, branchFilter, staffFilter, period, specificDate, customStart, customEnd, sortField, sortOrder]);
 
   const handleCreateTask = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -279,8 +347,8 @@ export const Tasks: React.FC = () => {
       </div>
 
       {/* Filter Bar */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-col sm:flex-row gap-3 items-center justify-between">
-        <div className="relative w-full sm:w-72">
+      <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-col lg:flex-row gap-3 items-center justify-between">
+        <div className="relative w-full lg:w-72">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
           <input
             type="text"
@@ -291,11 +359,24 @@ export const Tasks: React.FC = () => {
           />
         </div>
 
-        <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto">
+        <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto">
+          {/* Date Period Filter */}
+          <DatePeriodFilter
+            period={period}
+            onPeriodChange={setPeriod}
+            specificDate={specificDate}
+            onSpecificDateChange={setSpecificDate}
+            startDate={customStart}
+            onStartDateChange={setCustomStart}
+            endDate={customEnd}
+            onEndDateChange={setCustomEnd}
+            dateLabel="Task Created Date"
+          />
+
           <select
             value={statusFilter}
             onChange={e => setStatusFilter(e.target.value)}
-            className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-xl px-3 py-2 font-medium"
+            className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-xl px-3 py-2 font-medium cursor-pointer"
           >
             <option value="">All Statuses</option>
             <option value="New">New</option>
@@ -310,7 +391,7 @@ export const Tasks: React.FC = () => {
           <select
             value={priorityFilter}
             onChange={e => setPriorityFilter(e.target.value)}
-            className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-xl px-3 py-2 font-medium"
+            className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-xl px-3 py-2 font-medium cursor-pointer"
           >
             <option value="">All Priorities</option>
             <option value="Urgent">Urgent</option>
@@ -323,7 +404,7 @@ export const Tasks: React.FC = () => {
             <select
               value={branchFilter}
               onChange={e => setBranchFilter(e.target.value)}
-              className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-xl px-3 py-2 font-medium"
+              className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-xl px-3 py-2 font-medium cursor-pointer"
             >
               <option value="">All Branches</option>
               {branches.map(b => (
@@ -335,15 +416,25 @@ export const Tasks: React.FC = () => {
           <select
             value={staffFilter}
             onChange={e => setStaffFilter(e.target.value)}
-            className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-xl px-3 py-2 font-medium max-w-[150px] truncate"
+            className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-xl px-3 py-2 font-medium max-w-[150px] truncate cursor-pointer"
           >
             <option value="">All Staff</option>
             {staffMembers
-              .filter(s => !branchFilter || Number(s.branch_id) === Number(branchFilter))
+              .filter(s => !branchFilter || Number(s.branch_id || s.branchId) === Number(branchFilter))
               .map(s => (
-                <option key={s.id} value={s.id}>{s.full_name}</option>
+                <option key={s.id} value={s.id}>{s.full_name || s.fullName}</option>
               ))}
           </select>
+
+          <button
+            onClick={exportTasksToCsv}
+            disabled={tasks.length === 0}
+            className="flex items-center gap-1.5 px-3 py-2 bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-semibold rounded-xl transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Export filtered tasks to CSV"
+          >
+            <Download className="w-3.5 h-3.5 text-slate-500" />
+            <span className="hidden xl:inline">Export CSV</span>
+          </button>
         </div>
       </div>
 
@@ -357,7 +448,18 @@ export const Tasks: React.FC = () => {
               <th className="py-3.5 px-4">Branch</th>
               <th className="py-3.5 px-4">Assigned To</th>
               <th className="py-3.5 px-4">Priority</th>
-              <th className="py-3.5 px-4">Due Date</th>
+              <th
+                onClick={() => toggleSort('created_at')}
+                className="py-3.5 px-4 cursor-pointer hover:bg-slate-100 transition-colors select-none text-slate-700 whitespace-nowrap"
+                title="Click to sort by Created Date (Newest / Oldest)"
+              >
+                <div className="flex items-center gap-1.5">
+                  <span>Created Date</span>
+                  <span className="text-[10px] text-brand-600 font-bold">
+                    {sortField === 'created_at' ? (sortOrder === 'asc' ? '▲ Oldest' : '▼ Newest') : '↕'}
+                  </span>
+                </div>
+              </th>
               <th className="py-3.5 px-4">Status</th>
               <th className="py-3.5 px-4 text-right">Workflow</th>
             </tr>
@@ -380,16 +482,14 @@ export const Tasks: React.FC = () => {
                   <AssignedStaffPills staff={t.assigned_staff} fallbackName={t.assigned_to_name} />
                 </td>
                 <td className="py-3.5 px-4"><PriorityBadge priority={t.priority} /></td>
-                <td className="py-3.5 px-4 text-xs">
-                  <span className={t.is_overdue ? 'text-rose-600 font-bold' : 'text-slate-600'}>
-                    {t.due_date}
-                  </span>
+                <td className="py-3.5 px-4 text-xs font-medium text-slate-700 whitespace-nowrap">
+                  {formatDateTime(t.created_at)}
                 </td>
                 <td className="py-3.5 px-4"><StatusBadge status={t.status} /></td>
                 <td className="py-3.5 px-4 text-right">
                   <button
                     onClick={() => openTaskDetail(t)}
-                    className="text-xs font-bold text-brand-600 hover:bg-brand-50 px-3 py-1.5 rounded-lg transition-colors border border-brand-200"
+                    className="text-xs font-bold text-brand-600 hover:bg-brand-50 px-3 py-1.5 rounded-lg transition-colors border border-brand-200 cursor-pointer"
                   >
                     View / Manage
                   </button>
@@ -429,7 +529,9 @@ export const Tasks: React.FC = () => {
                 )}
               </div>
               <div className="text-xs text-slate-500">
-                Due: <b className="text-slate-800">{selectedTask.due_date}</b>
+                <span>Created: <b className="text-slate-700">{formatDateTime(selectedTask.created_at)}</b></span>
+                <span className="mx-2">•</span>
+                <span>Due: <b className="text-slate-800">{formatDateTime(selectedTask.due_date)}</b></span>
               </div>
             </div>
 

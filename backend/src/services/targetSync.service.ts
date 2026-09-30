@@ -44,8 +44,8 @@ export const countCompletedConnections = async (
     FROM connections
     WHERE branch_id = $1
       AND status = 'Completed'
-      AND COALESCE(completion_date, activation_date, installation_date, request_date) >= $2
-      AND COALESCE(completion_date, activation_date, installation_date, request_date) <= $3
+      AND DATE(COALESCE(completion_date, activation_date, installation_date, request_date)) >= $2
+      AND DATE(COALESCE(completion_date, activation_date, installation_date, request_date)) <= $3
       ${empClause}
   `;
 
@@ -198,8 +198,8 @@ export const getContributingConnectionsForTarget = async (targetId: number) => {
     LEFT JOIN users u ON c.assigned_staff_id = u.id
     WHERE c.branch_id = $1
       AND c.status = 'Completed'
-      AND COALESCE(c.completion_date, c.activation_date, c.installation_date, c.request_date) >= $2
-      AND COALESCE(c.completion_date, c.activation_date, c.installation_date, c.request_date) <= $3
+      AND DATE(COALESCE(c.completion_date, c.activation_date, c.installation_date, c.request_date)) >= $2
+      AND DATE(COALESCE(c.completion_date, c.activation_date, c.installation_date, c.request_date)) <= $3
       ${empClause}
     ORDER BY COALESCE(c.completion_date, c.activation_date, c.installation_date, c.request_date) DESC, c.id DESC
   `;
@@ -248,8 +248,8 @@ export const getTargetContributionForConnection = async (connectionId: number) =
      LEFT JOIN branches b ON t.branch_id = b.id
      WHERE t.branch_id = $1
        AND (t.category ILIKE 'New Connection%' OR t.category = 'NEW_CONNECTION')
-       AND t.start_date <= $2
-       AND t.end_date >= $2
+       AND t.start_date <= DATE($2)
+       AND t.end_date >= DATE($2)
      ORDER BY t.created_at DESC
      LIMIT 1`,
     [conn.branch_id, effectiveDate]

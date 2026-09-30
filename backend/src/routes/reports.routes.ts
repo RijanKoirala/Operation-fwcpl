@@ -11,11 +11,12 @@ const formatDateStr = (dateVal: any, includeTime = false): string => {
   if (!dateVal) return '';
   const d = new Date(dateVal);
   if (isNaN(d.getTime())) return String(dateVal);
-  const iso = d.toISOString();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const datePart = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   if (includeTime) {
-    return iso.replace('T', ' ').substring(0, 16);
+    return `${datePart} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }
-  return iso.substring(0, 10);
+  return datePart;
 };
 
 // Helper to convert array of objects to CSV
@@ -205,6 +206,7 @@ const handleReport = async (req: Request, res: Response, forceCsv = false) => {
                   u.full_name as "Primary Staff",
                   t.priority as "Priority",
                   t.status as "Status",
+                  t.created_at as "Created Date",
                   t.start_date as "Start Date",
                   t.due_date as "Due Date",
                   t.completion_date as "Completion Date",
@@ -238,6 +240,7 @@ const handleReport = async (req: Request, res: Response, forceCsv = false) => {
             delete copy.id;
             delete copy['Primary Staff'];
             copy['Assigned Staff'] = allStaff.length > 0 ? allStaff.join(', ') : 'Unassigned';
+            copy['Created Date'] = formatDateStr(copy['Created Date'], true);
             copy['Start Date'] = formatDateStr(copy['Start Date']);
             copy['Due Date'] = formatDateStr(copy['Due Date']);
             copy['Completion Date'] = formatDateStr(copy['Completion Date'], true);
@@ -291,17 +294,17 @@ const handleReport = async (req: Request, res: Response, forceCsv = false) => {
                   c.connection_type as "Connection Type",
                   c.package_plan as "Package Plan",
                   c.status as "Status",
-                  c.request_date as "Request Date",
+                  COALESCE(c.created_at, c.request_date::timestamp) as "Requested Date",
                   c.site_survey_date as "Survey Date",
                   c.installation_date as "Installation Date",
                   c.activation_date as "Activation Date",
-                  c.completion_date as "Completion Date",
+                  c.completion_date as "Completed Date",
                   c.remarks as "Remarks"
            FROM connections c
            LEFT JOIN branches b ON c.branch_id = b.id
            LEFT JOIN users u ON c.assigned_staff_id = u.id
            ${whereSql}
-           ORDER BY c.request_date DESC, c.id DESC`,
+           ORDER BY COALESCE(c.created_at, c.request_date::timestamp) DESC, c.id DESC`,
           params
         );
 
@@ -326,11 +329,11 @@ const handleReport = async (req: Request, res: Response, forceCsv = false) => {
             delete copy.id;
             delete copy['Primary Staff'];
             copy['Assigned Staff'] = allStaff.length > 0 ? allStaff.join(', ') : 'Unassigned';
-            copy['Request Date'] = formatDateStr(copy['Request Date']);
+            copy['Requested Date'] = formatDateStr(copy['Requested Date'], true);
             copy['Survey Date'] = formatDateStr(copy['Survey Date']);
             copy['Installation Date'] = formatDateStr(copy['Installation Date']);
             copy['Activation Date'] = formatDateStr(copy['Activation Date']);
-            copy['Completion Date'] = formatDateStr(copy['Completion Date']);
+            copy['Completed Date'] = formatDateStr(copy['Completed Date'], true);
             return copy;
           });
         }
