@@ -255,7 +255,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <div>
                 <span className="font-extrabold text-base tracking-tight text-white block">FWCPL OPS</span>
                 <span className="text-[10px] font-semibold text-indigo-400 uppercase tracking-wider block -mt-1">
-                  20+ Branches
+                  OPERATION MANAGEMENT SOFTWARE
                 </span>
               </div>
             </div>
