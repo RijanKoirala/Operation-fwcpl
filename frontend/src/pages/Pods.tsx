@@ -1544,24 +1544,20 @@ export const Pods: React.FC<PodsProps> = ({ onNavigate, initialPodId }) => {
                 type="text"
                 required
                 list="item-suggestions"
-                placeholder="e.g. WiFi Router, Fiber Cable, UPS, SFP, ONU..."
+                placeholder="e.g. BATTERY, UPS, HUAWEI 100G switch, Huawei 10G switch, BDcom switch, OLT gpon, OLT epon, AC..."
                 value={itemForm.item_name}
                 onChange={e => setItemForm({ ...itemForm, item_name: e.target.value })}
                 className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-bold focus:ring-2 focus:ring-indigo-600"
               />
               <datalist id="item-suggestions">
-                <option value="WiFi Router" />
-                <option value="ONU" />
-                <option value="Fiber Cable" />
-                <option value="Fiber Closure" />
-                <option value="SFP Module" />
+                <option value="BATTERY" />
                 <option value="UPS" />
-                <option value="Battery" />
-                <option value="Switch" />
-                <option value="Patch Cord" />
-                <option value="Power Adapter" />
-                <option value="Rack" />
-                <option value="Key" />
+                <option value="HUAWEI 100G switch" />
+                <option value="Huawei 10G switch" />
+                <option value="BDcom switch" />
+                <option value="OLT gpon" />
+                <option value="OLT epon" />
+                <option value="AC" />
               </datalist>
             </div>
 
