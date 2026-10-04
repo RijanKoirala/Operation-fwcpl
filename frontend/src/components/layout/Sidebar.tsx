@@ -92,6 +92,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       permissionKey: 'followups',
     },
     {
+      label: 'New Connections',
+      path: 'connections',
+      icon: <Plug className="w-5 h-5" />,
+      allowedRoles: ['SUPER_ADMIN', 'MANAGEMENT', 'BRANCH_MANAGER', 'STAFF'],
+      permissionKey: 'connections',
+    },
+    {
       label: 'Instructions',
       path: 'instructions',
       icon: <FileText className="w-5 h-5" />,
@@ -147,13 +154,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: <Target className="w-5 h-5" />,
       allowedRoles: ['SUPER_ADMIN', 'MANAGEMENT', 'BRANCH_MANAGER', 'STAFF'],
       permissionKey: 'targets',
-    },
-    {
-      label: 'New Connections',
-      path: 'connections',
-      icon: <Plug className="w-5 h-5" />,
-      allowedRoles: ['SUPER_ADMIN', 'MANAGEMENT', 'BRANCH_MANAGER', 'STAFF'],
-      permissionKey: 'connections',
     },
     {
       label: 'Reports',
