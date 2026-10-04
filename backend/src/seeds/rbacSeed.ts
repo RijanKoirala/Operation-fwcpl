@@ -156,6 +156,14 @@ export const INITIAL_PERMISSIONS: PermissionDefinition[] = [
   { module: 'Share Information', name: 'Delete Information', key: 'information.delete', description: 'Archive or remove announcement' },
   { module: 'Share Information', name: 'Pin Information', key: 'information.pin', description: 'Pin announcement to top featured carousel' },
   { module: 'Share Information', name: 'View Information History', key: 'information.view_history', description: 'View audience delivery and read receipts' },
+
+  // 23. Assets (Branch Asset Management)
+  { module: 'Assets', name: 'View Assets', key: 'assets.view', description: 'Access branch assets list and view branch asset inventory' },
+  { module: 'Assets', name: 'View All Branch Assets', key: 'assets.view_all', description: 'View and monitor assets across all branches company-wide' },
+  { module: 'Assets', name: 'Create Asset', key: 'assets.create', description: 'Add new asset record or update quantity for branch' },
+  { module: 'Assets', name: 'Edit Asset', key: 'assets.edit', description: 'Modify asset quantity or remarks' },
+  { module: 'Assets', name: 'Delete Asset', key: 'assets.delete', description: 'Remove asset record from branch inventory' },
+  { module: 'Assets', name: 'Manage Asset Types', key: 'assets.types.manage', description: 'Create, edit, or deactivate global asset types' },
 ];
 
 export const seedRbacData = async (): Promise<void> => {
@@ -245,6 +253,7 @@ export const seedRbacData = async (): Promise<void> => {
           'electricity.readings.view', 'electricity.readings.create', 'electricity.readings.edit', 'electricity.readings.delete',
           'electricity.payment.view', 'electricity.payment.create', 'electricity.payment.edit', 'electricity.history.view',
           'information.view', 'information.create', 'information.edit', 'information.publish', 'information.delete', 'information.pin', 'information.view_history',
+          'assets.view', 'assets.view_all', 'assets.create', 'assets.edit', 'assets.delete', 'assets.types.manage',
         ],
       },
       {
@@ -263,6 +272,7 @@ export const seedRbacData = async (): Promise<void> => {
           'pods.items.view', 'pods.items.create', 'pods.items.edit',
           'pods.history.view',
           'information.view',
+          'assets.view', 'assets.view_all',
         ],
       },
       {
@@ -285,6 +295,7 @@ export const seedRbacData = async (): Promise<void> => {
           'pods.view', 'pods.items.view', 'pods.history.view',
           'electricity.view', 'electricity.readings.view', 'electricity.readings.create', 'electricity.payment.view', 'electricity.history.view',
           'information.view',
+          'assets.view', 'assets.create', 'assets.edit',
         ],
       },
     ];
@@ -326,6 +337,20 @@ export const seedRbacData = async (): Promise<void> => {
              ON CONFLICT (role_id, permission_id) DO NOTHING`,
             [roleId, pId, true]
           );
+        }
+      } else {
+        // Also ensure newly introduced assets permissions are linked to existing default roles
+        for (const pKey of r.permissions) {
+          if (pKey.startsWith('assets.')) {
+            const pId = permIdMap[pKey];
+            if (pId) {
+              await db.query(
+                `INSERT INTO role_permissions (role_id, permission_id, allowed) VALUES ($1, $2, $3)
+                 ON CONFLICT (role_id, permission_id) DO NOTHING`,
+                [roleId, pId, true]
+              );
+            }
+          }
         }
       }
     }

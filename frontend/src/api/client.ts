@@ -364,6 +364,22 @@ export const api = {
     delete: (id: number) => api.delete(`/information/${id}`),
     togglePin: (id: number) => api.put(`/information/${id}/pin`),
   },
+
+  // Branch Asset Management
+  assets: {
+    getAll: (params?: any) => api.get(`/assets${toQueryString(params)}`),
+    getSummary: () => api.get('/assets/summary'),
+    getByBranch: (branchId: number) => api.get(`/assets/branch/${branchId}`),
+    getTypes: () => api.get('/assets/types'),
+    createType: (data: any) => api.post('/assets/types', data),
+    updateType: (id: number, data: any) => api.put(`/assets/types/${id}`, data),
+    deleteType: (id: number) => api.delete(`/assets/types/${id}`),
+    create: (data: any) => api.post('/assets', data),
+    update: (id: number, data: any) => api.put(`/assets/${id}`, data),
+    delete: (id: number) => api.delete(`/assets/${id}`),
+    exportCsvUrl: (params?: any) => `/api/assets/export/csv${toQueryString(params)}`,
+  },
+
 };
 
 

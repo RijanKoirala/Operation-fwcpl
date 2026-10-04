@@ -714,4 +714,35 @@ export interface PodStats {
   unavailable: number;
 }
 
+export interface AssetType {
+  id: number;
+  name: string;
+  description?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BranchAsset {
+  id: number;
+  branch_id: number;
+  branch_name: string;
+  branch_code?: string;
+  asset_type_id: number;
+  asset_type_name: string;
+  quantity: number;
+  remarks?: string;
+  created_at: string;
+  updated_at: string;
+  created_by_name?: string;
+  updated_by_name?: string;
+}
+
+export interface AssetSummary {
+  total_types: number;
+  total_quantity: number;
+  branches_with_assets: number;
+  most_common_asset: string;
+}
+
 

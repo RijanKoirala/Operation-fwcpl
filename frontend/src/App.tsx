@@ -29,6 +29,7 @@ import { Discussions } from './pages/Discussions';
 import { Pods } from './pages/Pods';
 import { ElectricityMeter } from './pages/ElectricityMeter';
 import { ShareInformation } from './pages/ShareInformation';
+import { Assets } from './pages/Assets';
 
 export const App: React.FC = () => {
   const { user, isLoading, hasPermission } = useAuth();
@@ -211,6 +212,8 @@ export const App: React.FC = () => {
       case 'share-information':
       case 'information':
         return <ShareInformation />;
+      case 'assets':
+        return <Assets />;
       case 'connections':
         return <Connections />;
       case 'followups':

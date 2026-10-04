@@ -22,6 +22,7 @@ import {
   Zap,
   Megaphone,
   Ticket,
+  Package2,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
@@ -97,6 +98,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: <Plug className="w-5 h-5" />,
       allowedRoles: ['SUPER_ADMIN', 'MANAGEMENT', 'BRANCH_MANAGER', 'STAFF'],
       permissionKey: 'connections',
+    },
+    {
+      label: 'Assets',
+      path: 'assets',
+      icon: <Package2 className="w-5 h-5" />,
+      allowedRoles: ['SUPER_ADMIN', 'MANAGEMENT', 'BRANCH_MANAGER', 'STAFF'],
+      permissionKey: 'assets.view',
     },
     {
       label: 'Instructions',
@@ -220,7 +228,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
       if (
         item.permissionKey === 'discussions' ||
         item.permissionKey === 'electricity' ||
-        item.permissionKey === 'information'
+        item.permissionKey === 'information' ||
+        item.permissionKey === 'assets.view' ||
+        item.permissionKey === 'assets'
       ) {
         return true;
       }

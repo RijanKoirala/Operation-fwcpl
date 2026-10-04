@@ -31,6 +31,7 @@ import discussionRoutes from './routes/discussions.routes';
 import podRoutes from './routes/pods.routes';
 import electricityRoutes from './routes/electricity.routes';
 import informationRoutes from './routes/information.routes';
+import assetsRouter from './routes/assets.routes';
 
 const app = express();
 
@@ -78,6 +79,7 @@ app.use('/api/discussions', discussionRoutes);
 app.use('/api/pods', podRoutes);
 app.use('/api/electricity', electricityRoutes);
 app.use('/api/information', informationRoutes);
+app.use('/api/assets', assetsRouter);
 
 // Global Error Handler
 app.use((err: any, req: Request, res: Response, next: any) => {

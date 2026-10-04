@@ -620,10 +620,46 @@ class DatabaseManager {
         SELECT id, assigned_staff_id FROM connections
         WHERE assigned_staff_id IS NOT NULL
         ON CONFLICT (connection_id, staff_id) DO NOTHING;
+
+        -- Branch Asset Management Tables
+        CREATE TABLE IF NOT EXISTS asset_types (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(100) NOT NULL UNIQUE,
+            description TEXT,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS branch_assets (
+            id SERIAL PRIMARY KEY,
+            branch_id INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+            asset_type_id INTEGER NOT NULL REFERENCES asset_types(id) ON DELETE RESTRICT,
+            quantity INTEGER NOT NULL DEFAULT 0 CHECK (quantity >= 0),
+            remarks TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            created_by_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            updated_by_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            UNIQUE(branch_id, asset_type_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_branch_assets_branch ON branch_assets(branch_id);
+        CREATE INDEX IF NOT EXISTS idx_branch_assets_type ON branch_assets(asset_type_id);
+
+        INSERT INTO asset_types (name) VALUES
+          ('Splicing Machine'), ('OTDR'), ('Power Meter'), ('Fusion Splicer'),
+          ('Fiber Cleaver'), ('VFL'), ('Optical Power Meter'), ('Motorbike'),
+          ('Vehicle'), ('Car'), ('Pickup'), ('AC'), ('Refrigerator'), ('Computer'),
+          ('Laptop'), ('Printer'), ('UPS'), ('Router'), ('Switch'), ('Wi-Fi Router'),
+          ('Rack'), ('Office Table'), ('Office Chair'), ('Cabinet'), ('Sofa'),
+          ('Generator'), ('Inverter'), ('Battery'), ('Telephone'), ('CCTV'),
+          ('Projector'), ('Other')
+        ON CONFLICT (name) DO NOTHING;
       `);
-      console.log('✅ PostgreSQL NOC, RBAC, Goods, Discussions, POD, Electricity, Information & Multi-Staff tables verified & ready.');
+      console.log('✅ PostgreSQL NOC, RBAC, Goods, Discussions, POD, Electricity, Information, Multi-Staff & Assets tables verified & ready.');
     } catch (nocErr: any) {
-      console.error('❌ Failed to ensure NOC/RBAC/Electricity/Information/Multi-Staff tables in PostgreSQL:', nocErr.message);
+      console.error('❌ Failed to ensure NOC/RBAC/Electricity/Information/Multi-Staff/Assets tables in PostgreSQL:', nocErr.message);
     }
   }
 
@@ -1165,6 +1201,41 @@ class DatabaseManager {
 
         INSERT OR IGNORE INTO connection_staff (connection_id, staff_id)
         SELECT id, assigned_staff_id FROM connections WHERE assigned_staff_id IS NOT NULL;
+
+        -- Branch Asset Management Tables
+        CREATE TABLE IF NOT EXISTS asset_types (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            description TEXT,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS branch_assets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            branch_id INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+            asset_type_id INTEGER NOT NULL REFERENCES asset_types(id) ON DELETE RESTRICT,
+            quantity INTEGER NOT NULL DEFAULT 0 CHECK (quantity >= 0),
+            remarks TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            created_by_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            updated_by_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            UNIQUE(branch_id, asset_type_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_branch_assets_branch ON branch_assets(branch_id);
+        CREATE INDEX IF NOT EXISTS idx_branch_assets_type ON branch_assets(asset_type_id);
+
+        INSERT OR IGNORE INTO asset_types (name) VALUES
+          ('Splicing Machine'), ('OTDR'), ('Power Meter'), ('Fusion Splicer'),
+          ('Fiber Cleaver'), ('VFL'), ('Optical Power Meter'), ('Motorbike'),
+          ('Vehicle'), ('Car'), ('Pickup'), ('AC'), ('Refrigerator'), ('Computer'),
+          ('Laptop'), ('Printer'), ('UPS'), ('Router'), ('Switch'), ('Wi-Fi Router'),
+          ('Rack'), ('Office Table'), ('Office Chair'), ('Cabinet'), ('Sofa'),
+          ('Generator'), ('Inverter'), ('Battery'), ('Telephone'), ('CCTV'),
+          ('Projector'), ('Other');
       `);
     } catch {}
 
