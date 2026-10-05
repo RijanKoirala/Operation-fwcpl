@@ -275,7 +275,7 @@ export const Discussions: React.FC = () => {
               <MessagesSquare className="w-5 h-5" />
             </div>
             <h1 className="text-2xl font-black text-slate-900 tracking-tight">
-              Discussion Box
+              Discussion with Operation
             </h1>
             <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100">
               Branch ↔ Operations Desk

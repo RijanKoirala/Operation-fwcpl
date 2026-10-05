@@ -114,7 +114,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       permissionKey: 'instructions',
     },
     {
-      label: 'Discussion Box',
+      label: 'Discussion with Operation',
       path: 'discussions',
       icon: <MessagesSquare className="w-5 h-5" />,
       allowedRoles: ['SUPER_ADMIN', 'MANAGEMENT', 'BRANCH_MANAGER', 'STAFF'],
