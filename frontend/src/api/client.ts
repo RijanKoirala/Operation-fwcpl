@@ -88,6 +88,11 @@ export const api = {
       method: 'PUT',
       body: body instanceof FormData ? body : JSON.stringify(body),
     }),
+  patch: <T = any>(endpoint: string, body?: any) =>
+    request<T>(endpoint, {
+      method: 'PATCH',
+      body: body instanceof FormData ? body : JSON.stringify(body),
+    }),
   delete: <T = any>(endpoint: string) => request<T>(endpoint, { method: 'DELETE' }),
 
   downloadCsv: async (reportType: string, params: Record<string, string> = {}) => {

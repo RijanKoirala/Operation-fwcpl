@@ -588,9 +588,9 @@ router.put(
 );
 
 // ============================================================
-// 6. PATCH /api/operation-tickets/:id/status - Change status / Close ticket / Reopen
+// 6. PATCH / PUT /api/operation-tickets/:id/status - Change status / Close ticket / Reopen
 // ============================================================
-router.patch('/:id/status', authenticate, async (req: Request, res: Response) => {
+const handleStatusUpdate = async (req: Request, res: Response) => {
   try {
     const user = req.user!;
     const central = isCentralUser(user);
@@ -706,10 +706,13 @@ router.patch('/:id/status', authenticate, async (req: Request, res: Response) =>
       ticket: updatedTicket,
     });
   } catch (err: any) {
-    console.error('Error in PATCH /api/operation-tickets/:id/status:', err);
+    console.error('Error in status update /api/operation-tickets/:id/status:', err);
     return res.status(500).json({ success: false, message: err.message });
   }
-});
+};
+
+router.patch('/:id/status', authenticate, handleStatusUpdate);
+router.put('/:id/status', authenticate, handleStatusUpdate);
 
 // ============================================================
 // 7. POST /api/operation-tickets/:id/updates - Post Operation Remark / Action Taken / Note
