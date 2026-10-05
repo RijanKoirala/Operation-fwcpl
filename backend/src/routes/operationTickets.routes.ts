@@ -547,21 +547,40 @@ router.put(
         }
       }
 
-      const { subject, description, category, priority } = req.body;
+      const { subject, description, category, priority, resolution, actionTaken, status } = req.body;
 
       const newSubject = subject !== undefined ? String(subject).trim() : current.subject;
       const newDescription = description !== undefined ? String(description).trim() : current.description;
       const newCategory = category !== undefined ? category : current.category;
       const newPriority = priority !== undefined ? priority : current.priority;
+      const newResolution = resolution !== undefined ? (String(resolution).trim() || null) : (actionTaken !== undefined ? (String(actionTaken).trim() || null) : current.resolution);
+
+      let newStatus = current.status;
+      let closedBy = current.closed_by;
+      let closedAt = current.closed_at;
+
+      if (status && central) {
+        const normalized = String(status).toUpperCase().replace(/\s+/g, '_');
+        if (['OPEN', 'IN_PROGRESS', 'CLOSED'].includes(normalized)) {
+          newStatus = normalized;
+          if (newStatus === 'CLOSED' && current.status !== 'CLOSED') {
+            closedBy = user.id;
+            closedAt = new Date();
+          } else if (newStatus !== 'CLOSED') {
+            closedBy = null;
+            closedAt = null;
+          }
+        }
+      }
 
       if (!newSubject) return res.status(400).json({ success: false, message: 'Subject cannot be empty.' });
       if (!newDescription) return res.status(400).json({ success: false, message: 'Description cannot be empty.' });
 
       await db.query(
         `UPDATE operation_tickets
-         SET subject = $1, description = $2, category = $3, priority = $4, updated_at = CURRENT_TIMESTAMP
-         WHERE id = $5`,
-        [newSubject, newDescription, newCategory, newPriority, ticketId]
+         SET subject = $1, description = $2, category = $3, priority = $4, resolution = $5, status = $6, closed_by = $7, closed_at = $8, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $9`,
+        [newSubject, newDescription, newCategory, newPriority, newResolution, newStatus, closedBy, closedAt, ticketId]
       );
 
       // Handle additional file attachments if any
@@ -578,10 +597,14 @@ router.put(
       }
 
       // Log update in timeline
+      const updateMsg = newResolution && newResolution !== current.resolution
+        ? `Ticket details and action/resolution updated by ${user.fullName || user.username}`
+        : `Ticket details updated by ${user.fullName || user.username}`;
+
       await db.query(
-        `INSERT INTO operation_ticket_updates (ticket_id, user_id, update_type, message, created_at)
-         VALUES ($1, $2, 'EDIT', $3, CURRENT_TIMESTAMP)`,
-        [ticketId, user.id, `Ticket details updated by ${user.fullName || user.username}`]
+        `INSERT INTO operation_ticket_updates (ticket_id, user_id, update_type, message, old_status, new_status, created_at)
+         VALUES ($1, $2, 'EDIT', $3, $4, $5, CURRENT_TIMESTAMP)`,
+        [ticketId, user.id, updateMsg, current.status !== newStatus ? current.status : null, current.status !== newStatus ? newStatus : null]
       );
 
       // Audit log
