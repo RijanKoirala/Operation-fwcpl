@@ -600,6 +600,8 @@ export const OperationCenter: React.FC<OperationCenterProps> = ({ onNavigate }) 
     hasPermission('operation_center.update_status') ||
     hasPermission('operation_center.close');
 
+  const canManageTickets = Boolean(isCentral);
+
   return (
     <div className="space-y-6 pb-12">
       {/* Header */}
