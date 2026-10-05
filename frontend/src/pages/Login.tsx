@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Lock, User, Wifi, ArrowRight, AlertCircle } from 'lucide-react';
+import { Lock, User, ArrowRight, AlertCircle } from 'lucide-react';
+import logoImg from '../assets/logo.png';
 
 export const Login: React.FC = () => {
   const { login } = useAuth();
@@ -26,13 +27,12 @@ export const Login: React.FC = () => {
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         {/* Brand Header */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-indigo-600 text-white shadow-xl shadow-indigo-600/30 mb-4 ring-8 ring-indigo-500/10">
-            <Wifi className="w-8 h-8" />
-          </div>
-          <h1 className="text-2xl font-black text-white tracking-tight">
-            Fiber World Communication
-          </h1>
+        <div className="text-center mb-8 flex flex-col items-center">
+          <img
+            src={logoImg}
+            alt="Fiber World Communication"
+            className="h-12 w-auto object-contain mb-3 drop-shadow-md max-w-[280px]"
+          />
           <p className="text-indigo-200/70 text-xs mt-1">
             Branch & Operations Management Enterprise System
           </p>

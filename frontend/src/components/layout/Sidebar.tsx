@@ -1,4 +1,5 @@
 import React from 'react';
+import logoImg from '../../assets/logo.png';
 import {
   LayoutDashboard,
   Building2,
@@ -256,17 +257,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
       >
         {/* Top: Brand & Close */}
         <div>
-          <div className="flex items-center justify-between h-16 px-6 border-b border-slate-800">
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-sky-400 flex items-center justify-center text-white shadow-md shadow-indigo-500/20">
-                <Radio className="w-5 h-5" />
-              </div>
-              <div>
-                <span className="font-extrabold text-base tracking-tight text-white block">FWCPL OPS</span>
-                <span className="text-[10px] font-semibold text-indigo-400 uppercase tracking-wider block -mt-1">
-                  OPERATION MANAGEMENT SOFTWARE
-                </span>
-              </div>
+          <div className="flex items-center justify-between h-16 px-5 border-b border-slate-800">
+            <div
+              className="flex items-center cursor-pointer select-none"
+              onClick={() => {
+                onNavigate('dashboard');
+                handleClose();
+              }}
+            >
+              <img
+                src={logoImg}
+                alt="Fiberworld Communication"
+                className="h-9 w-auto object-contain max-w-[180px]"
+              />
             </div>
             <button onClick={handleClose} className="p-1 rounded-lg text-slate-400 hover:text-white lg:hidden">
               <X className="w-5 h-5" />
