@@ -22,7 +22,9 @@
     "clean:demo": "node dist/scripts/cleanDemoData.js",
     "clean:demo:dev": "ts-node src/scripts/cleanDemoData.ts",
     "send:backup:email": "node dist/scripts/sendBackupEmail.js",
-    "send:backup:email:dev": "ts-node src/scripts/sendBackupEmail.ts"
+    "send:backup:email:dev": "ts-node src/scripts/sendBackupEmail.ts",
+    "seed:operation-tickets": "node dist/seeds/operationTicketsSeed.js",
+    "seed:operation-tickets:dev": "ts-node src/seeds/operationTicketsSeed.ts"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

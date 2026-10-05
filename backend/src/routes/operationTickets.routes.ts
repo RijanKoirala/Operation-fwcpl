@@ -163,6 +163,21 @@ router.get('/stats', authenticate, requirePermission('operation_center.view'), a
   }
 });
 
+// Seed historical excel tickets endpoint
+router.post('/seed-historical', authenticate, async (req: Request, res: Response) => {
+  try {
+    const user = req.user!;
+    if (user.role !== 'SUPER_ADMIN' && !isCentralUser(user)) {
+      return res.status(403).json({ success: false, message: 'Only Operations Administrators can seed historical data.' });
+    }
+    const { seedOperationTicketsData } = await import('../seeds/operationTicketsSeed');
+    await seedOperationTicketsData();
+    return res.json({ success: true, message: 'Historical operation tickets seed executed successfully.' });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // ============================================================
 // 2. GET /api/operation-tickets - List tickets with filters & pagination
 // ============================================================
