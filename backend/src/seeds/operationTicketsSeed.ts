@@ -2035,7 +2035,8 @@ export const SEED_TICKETS: SeedTicket[] = [
   }
 ];
 
-export const seedOperationTicketsData = async (): Promise<void> => {
+export const seedOperationTicketsData = async (): Promise<number> => {
+  let insertedCount = 0;
   try {
     console.log('🎫 Seeding Historical Operation Center Tickets from Excel Log...');
 
@@ -2046,43 +2047,60 @@ export const seedOperationTicketsData = async (): Promise<void> => {
       const cleanName = b.name.trim();
       const baseName = cleanName.replace(/\s+Branch(\s+\(All\))?$/i, '').trim();
 
-      const existing = await db.query(
-        `SELECT id, name FROM branches 
-         WHERE LOWER(name) = LOWER($1) 
-            OR LOWER(name) = LOWER($2) 
-            OR LOWER(name) LIKE $3
-         LIMIT 1`,
-        [cleanName, baseName, `%${baseName.toLowerCase()}%`]
-      );
+      try {
+        const existing = await db.query(
+          `SELECT id, name FROM branches 
+           WHERE LOWER(name) = LOWER($1) 
+              OR LOWER(name) = LOWER($2) 
+              OR LOWER(name) LIKE $3
+           LIMIT 1`,
+          [cleanName, baseName, `%${baseName.toLowerCase()}%`]
+        );
 
-      if (existing.rowCount > 0) {
-        branchMap[cleanName] = existing.rows[0].id;
-        branchMap[baseName] = existing.rows[0].id;
-      } else {
-        const code = `BR-${String(i + 1).padStart(3, '0')}`;
+        if (existing.rowCount > 0) {
+          branchMap[cleanName] = existing.rows[0].id;
+          branchMap[baseName] = existing.rows[0].id;
+          continue;
+        }
+
+        const code = `BR-${String(i + 1).padStart(3, '0')}-${baseName.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6)}`;
         const ins = await db.query(
-          `INSERT INTO branches (code, name, contact_number, status, created_at, updated_at)
-           VALUES ($1, $2, $3, 'Active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+          `INSERT INTO branches (
+             code, name, address, city, province, contact_number, email, opening_date, status, created_at, updated_at
+           ) VALUES (
+             $1, $2, $3, $4, $5, $6, $7, $8, 'Active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+           )
            ON CONFLICT (code) DO NOTHING
            RETURNING id`,
-          [code, cleanName, b.contact || null]
+          [
+            code,
+            cleanName,
+            `${baseName}, Nepal`,
+            baseName,
+            'Bagmati Province',
+            b.contact || '+977-1-0000000',
+            `${baseName.toLowerCase().replace(/[^a-z0-9]/g, '')}@fiberworld.com.np`,
+            '2022-01-01',
+          ]
         );
 
         if (ins.rowCount > 0) {
           branchMap[cleanName] = ins.rows[0].id;
           branchMap[baseName] = ins.rows[0].id;
         } else {
-          const fetchAgain = await db.query(`SELECT id FROM branches WHERE code = $1`, [code]);
+          const fetchAgain = await db.query(`SELECT id FROM branches WHERE code = $1 LIMIT 1`, [code]);
           if (fetchAgain.rowCount > 0) {
             branchMap[cleanName] = fetchAgain.rows[0].id;
             branchMap[baseName] = fetchAgain.rows[0].id;
           }
         }
+      } catch (bErr: any) {
+        console.warn(`Could not ensure branch ${cleanName}:`, bErr.message);
       }
     }
 
     // Default fallback branch (Operation HQ or first branch)
-    let fallbackBranchId = branchMap['Operation HQ'];
+    let fallbackBranchId = branchMap['Operation HQ'] || branchMap['Operation HQ Branch'];
     if (!fallbackBranchId) {
       const firstBranch = await db.query(`SELECT id FROM branches ORDER BY id ASC LIMIT 1`);
       if (firstBranch.rowCount > 0) {
@@ -2107,83 +2125,118 @@ export const seedOperationTicketsData = async (): Promise<void> => {
         const firstUser = await db.query(`SELECT id FROM users ORDER BY id ASC LIMIT 1`);
         if (firstUser.rowCount === 0) {
           console.log('⚠️ No users found in database yet. Skipping operation tickets seed.');
-          return;
+          return 0;
         }
         userId = firstUser.rows[0].id;
       }
     }
 
-    // 3. Insert tickets idempotently
-    let insertedCount = 0;
-    for (const t of SEED_TICKETS) {
-      const branchId = branchMap[t.branchName] || branchMap[t.branchName.replace(/\s+Branch(\s+\(All\))?$/i, '').trim()] || fallbackBranchId;
-
-      if (!branchId) {
-        continue;
+    // 3. Sync operation_ticket_seq before bulk inserting
+    try {
+      const maxRes = await db.query(`SELECT COALESCE(MAX(id), 0) as max_id FROM operation_tickets`);
+      const maxVal = parseInt(maxRes.rows[0]?.max_id || '0', 10);
+      if (maxVal > 0) {
+        await db.query(`SELECT setval('operation_ticket_seq', $1, true)`, [maxVal]);
       }
+    } catch (sErr: any) {
+      console.warn('Could not sync operation_ticket_seq:', sErr.message);
+    }
 
-      // Check if already seeded
-      const chk = await db.query(
-        `SELECT id FROM operation_tickets WHERE branch_id = $1 AND subject = $2 AND created_at = $3 LIMIT 1`,
-        [branchId, t.subject, t.createdAt]
-      );
+    // 4. Insert tickets idempotently
+    for (let idx = 0; idx < SEED_TICKETS.length; idx++) {
+      const t = SEED_TICKETS[idx];
+      try {
+        const branchId = branchMap[t.branchName] || branchMap[t.branchName.replace(/\s+Branch(\s+\(All\))?$/i, '').trim()] || fallbackBranchId;
 
-      if (chk.rowCount > 0) {
-        continue;
-      }
+        if (!branchId) {
+          continue;
+        }
 
-      const insTicket = await db.query(
-        `INSERT INTO operation_tickets (
-           branch_id, created_by, category, priority, subject, description,
-           status, resolution, closed_by, closed_at, created_at, updated_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-         RETURNING id`,
-        [
-          branchId,
-          userId,
-          t.category,
-          t.priority,
-          t.subject,
-          t.description,
-          t.status,
-          t.resolution || null,
-          t.status === 'CLOSED' ? userId : null,
-          t.closedAt || null,
-          t.createdAt,
-          t.closedAt || t.createdAt,
-        ]
-      );
-
-      if (insTicket.rowCount > 0) {
-        insertedCount++;
-        const ticketId = insTicket.rows[0].id;
-
-        // Add timeline updates
-        await db.query(
-          `INSERT INTO operation_ticket_updates (ticket_id, user_id, update_type, message, old_status, new_status, created_at)
-           VALUES ($1, $2, 'CREATED', 'Ticket logged from Branch Operations report', NULL, 'OPEN', $3)`,
-          [ticketId, userId, t.createdAt]
+        // Check if already seeded
+        const chk = await db.query(
+          `SELECT id FROM operation_tickets WHERE branch_id = $1 AND subject = $2 AND created_at = $3 LIMIT 1`,
+          [branchId, t.subject, t.createdAt]
         );
 
-        if (t.status === 'IN_PROGRESS') {
-          await db.query(
-            `INSERT INTO operation_ticket_updates (ticket_id, user_id, update_type, message, old_status, new_status, created_at)
-             VALUES ($1, $2, 'STATUS_CHANGE', $3, 'OPEN', 'IN_PROGRESS', $4)`,
-            [ticketId, userId, t.resolution || 'Marked In Progress by Operations team', t.createdAt]
-          );
-        } else if (t.status === 'CLOSED') {
-          await db.query(
-            `INSERT INTO operation_ticket_updates (ticket_id, user_id, update_type, message, old_status, new_status, created_at)
-             VALUES ($1, $2, 'CLOSED', $3, 'OPEN', 'CLOSED', $4)`,
-            [ticketId, userId, t.resolution ? `Resolution: ${t.resolution}` : 'Closed by Operations', t.closedAt || t.createdAt]
-          );
+        if (chk.rowCount > 0) {
+          continue;
         }
+
+        // Generate guaranteed unique ticket_id
+        let ticketCode: string;
+        try {
+          const nextValRes = await db.query(`SELECT ('OP-' || LPAD(nextval('operation_ticket_seq')::text, 5, '0')) as next_id`);
+          ticketCode = nextValRes.rows[0]?.next_id;
+        } catch {
+          ticketCode = `OP-${String(Date.now() + idx).slice(-5)}`;
+        }
+
+        // Fallback if ticketCode already exists
+        const existsChk = await db.query(`SELECT id FROM operation_tickets WHERE ticket_id = $1 LIMIT 1`, [ticketCode]);
+        if (existsChk.rowCount > 0) {
+          const maxNumRes = await db.query(`SELECT COALESCE(MAX(id), 0) + $1 as next_val FROM operation_tickets`, [idx + 10]);
+          ticketCode = `OP-${String(maxNumRes.rows[0]?.next_val || Date.now()).padStart(5, '0')}`;
+        }
+
+        const insTicket = await db.query(
+          `INSERT INTO operation_tickets (
+             ticket_id, branch_id, created_by, category, priority, subject, description,
+             status, resolution, closed_by, closed_at, created_at, updated_at
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+           ON CONFLICT (ticket_id) DO NOTHING
+           RETURNING id`,
+          [
+            ticketCode,
+            branchId,
+            userId,
+            t.category,
+            t.priority,
+            t.subject,
+            t.description,
+            t.status,
+            t.resolution || null,
+            t.status === 'CLOSED' ? userId : null,
+            t.closedAt || null,
+            t.createdAt,
+            t.closedAt || t.createdAt,
+          ]
+        );
+
+        if (insTicket.rowCount > 0) {
+          insertedCount++;
+          const ticketId = insTicket.rows[0].id;
+
+          // Add timeline updates
+          await db.query(
+            `INSERT INTO operation_ticket_updates (ticket_id, user_id, update_type, message, old_status, new_status, created_at)
+             VALUES ($1, $2, 'CREATED', 'Ticket logged from Branch Operations report', NULL, 'OPEN', $3)`,
+            [ticketId, userId, t.createdAt]
+          );
+
+          if (t.status === 'IN_PROGRESS') {
+            await db.query(
+              `INSERT INTO operation_ticket_updates (ticket_id, user_id, update_type, message, old_status, new_status, created_at)
+               VALUES ($1, $2, 'STATUS_CHANGE', $3, 'OPEN', 'IN_PROGRESS', $4)`,
+              [ticketId, userId, t.resolution || 'Marked In Progress by Operations team', t.createdAt]
+            );
+          } else if (t.status === 'CLOSED') {
+            await db.query(
+              `INSERT INTO operation_ticket_updates (ticket_id, user_id, update_type, message, old_status, new_status, created_at)
+               VALUES ($1, $2, 'CLOSED', $3, 'OPEN', 'CLOSED', $4)`,
+              [ticketId, userId, t.resolution ? `Resolution: ${t.resolution}` : 'Closed by Operations', t.closedAt || t.createdAt]
+            );
+          }
+        }
+      } catch (tErr: any) {
+        console.warn(`Failed to insert seed ticket ${t.sn || idx}:`, tErr.message);
       }
     }
 
     console.log(`✅ Successfully seeded ${insertedCount} historical operation tickets into database.`);
+    return insertedCount;
   } catch (err: any) {
     console.error('⚠️ Warning during operation tickets seed:', err.message);
+    return insertedCount;
   }
 };
 

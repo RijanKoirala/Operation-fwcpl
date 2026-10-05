@@ -712,6 +712,15 @@ class DatabaseManager {
         );
 
         CREATE INDEX IF NOT EXISTS idx_op_ticket_updates_ticket ON operation_ticket_updates(ticket_id);
+
+        -- Ensure branches table columns allow NULL for smooth auto-seeding
+        DO $$ BEGIN
+          BEGIN ALTER TABLE branches ALTER COLUMN address DROP NOT NULL; EXCEPTION WHEN OTHERS THEN NULL; END;
+          BEGIN ALTER TABLE branches ALTER COLUMN city DROP NOT NULL; EXCEPTION WHEN OTHERS THEN NULL; END;
+          BEGIN ALTER TABLE branches ALTER COLUMN province DROP NOT NULL; EXCEPTION WHEN OTHERS THEN NULL; END;
+          BEGIN ALTER TABLE branches ALTER COLUMN email DROP NOT NULL; EXCEPTION WHEN OTHERS THEN NULL; END;
+          BEGIN ALTER TABLE branches ALTER COLUMN opening_date DROP NOT NULL; EXCEPTION WHEN OTHERS THEN NULL; END;
+        END $$;
       `);
       console.log('✅ PostgreSQL NOC, RBAC, Goods, Discussions, POD, Electricity, Information, Multi-Staff, Assets & Operation Center tables verified & ready.');
     } catch (nocErr: any) {

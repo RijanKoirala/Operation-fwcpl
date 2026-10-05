@@ -103,6 +103,18 @@ router.get('/stats', authenticate, requirePermission('operation_center.view'), a
     const central = isCentralUser(user);
     const { branchId, startDate, endDate, period } = req.query;
 
+    // Auto-seed historical tickets if database has <= 4 tickets
+    try {
+      const countCheck = await db.query(`SELECT COUNT(*) as c FROM operation_tickets`);
+      const existingCount = parseInt(countCheck.rows[0]?.c || '0', 10);
+      if (existingCount <= 4) {
+        const { seedOperationTicketsData } = await import('../seeds/operationTicketsSeed');
+        await seedOperationTicketsData();
+      }
+    } catch (sErr: any) {
+      console.warn('Auto-seed check warning:', sErr.message);
+    }
+
     const whereClauses: string[] = [];
     const params: any[] = [];
 
@@ -177,8 +189,8 @@ router.post('/seed-historical', authenticate, async (req: Request, res: Response
       return res.status(403).json({ success: false, message: 'Only Operations Administrators can seed historical data.' });
     }
     const { seedOperationTicketsData } = await import('../seeds/operationTicketsSeed');
-    await seedOperationTicketsData();
-    return res.json({ success: true, message: 'Historical operation tickets seed executed successfully.' });
+    const seededCount = await seedOperationTicketsData();
+    return res.json({ success: true, count: seededCount, message: `Historical operation tickets processed (${seededCount} new tickets seeded).` });
   } catch (err: any) {
     return res.status(500).json({ success: false, message: err.message });
   }
@@ -191,6 +203,18 @@ router.get('/', authenticate, requirePermission('operation_center.view'), async 
   try {
     const user = req.user!;
     const central = isCentralUser(user);
+
+    // Auto-seed historical tickets if database has <= 4 tickets
+    try {
+      const countCheck = await db.query(`SELECT COUNT(*) as c FROM operation_tickets`);
+      const existingCount = parseInt(countCheck.rows[0]?.c || '0', 10);
+      if (existingCount <= 4) {
+        const { seedOperationTicketsData } = await import('../seeds/operationTicketsSeed');
+        await seedOperationTicketsData();
+      }
+    } catch (sErr: any) {
+      console.warn('Auto-seed check warning:', sErr.message);
+    }
 
     const {
       branchId,

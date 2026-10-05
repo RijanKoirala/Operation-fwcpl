@@ -400,6 +400,7 @@ export const api = {
       api.post(`/operation-tickets/${id}/attachments`, formData),
     deleteAttachment: (ticketId: number, attachmentId: number) =>
       api.delete(`/operation-tickets/${ticketId}/attachments/${attachmentId}`),
+    seedHistorical: () => api.post('/operation-tickets/seed-historical', {}),
   },
 
 };
