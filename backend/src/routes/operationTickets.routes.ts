@@ -121,6 +121,12 @@ router.get('/stats', authenticate, requirePermission('operation_center.view'), a
       whereClauses.push(`DATE(t.created_at) >= $${params.length}`);
       params.push(endDate);
       whereClauses.push(`DATE(t.created_at) <= $${params.length}`);
+    } else if (startDate) {
+      params.push(startDate);
+      whereClauses.push(`DATE(t.created_at) >= $${params.length}`);
+    } else if (endDate) {
+      params.push(endDate);
+      whereClauses.push(`DATE(t.created_at) <= $${params.length}`);
     } else if (period && period !== 'all') {
       if (period === 'today') {
         whereClauses.push(`DATE(t.created_at) = CURRENT_DATE`);

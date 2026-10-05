@@ -202,6 +202,15 @@ export const OperationCenter: React.FC<OperationCenterProps> = ({ onNavigate }) 
       } else if (branchFilter) {
         qObj.branchId = branchFilter;
       }
+
+      if (datePeriod !== 'all') {
+        qObj.period = datePeriod;
+        if (datePeriod === 'custom') {
+          if (customStart) qObj.startDate = customStart;
+          if (customEnd) qObj.endDate = customEnd;
+        }
+      }
+
       const res = await api.operationCenter.getStats(qObj);
       if (res.success && res.stats) {
         setStats(res.stats);
@@ -257,7 +266,7 @@ export const OperationCenter: React.FC<OperationCenterProps> = ({ onNavigate }) 
 
   useEffect(() => {
     fetchStats();
-  }, [branchFilter]);
+  }, [branchFilter, datePeriod, customStart, customEnd]);
 
   useEffect(() => {
     fetchTickets();
@@ -601,6 +610,90 @@ export const OperationCenter: React.FC<OperationCenterProps> = ({ onNavigate }) 
         </button>
       </div>
 
+      {/* Dashboard Section Header with Date Period Filters */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+        <div>
+          <span className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-indigo-500" />
+            Queue Status Metrics
+          </span>
+          <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+            {datePeriod === 'all' && 'All-time ticket metrics'}
+            {datePeriod === 'today' && "Today's ticket metrics"}
+            {datePeriod === 'yesterday' && "Yesterday's ticket metrics"}
+            {datePeriod === 'this_week' && "This week's ticket metrics"}
+            {datePeriod === 'this_month' && "This month's ticket metrics"}
+            {datePeriod === 'custom' && `Custom range: ${customStart || 'Start'} to ${customEnd || 'End'}`}
+          </p>
+        </div>
+
+        {/* Date Filter Buttons */}
+        <div className="flex flex-wrap items-center gap-1 bg-white p-1 rounded-xl border border-slate-200 shadow-xs self-start sm:self-auto">
+          {[
+            { id: 'all', label: 'All' },
+            { id: 'today', label: 'Today' },
+            { id: 'yesterday', label: 'Yesterday' },
+            { id: 'this_week', label: 'This Week' },
+            { id: 'this_month', label: 'This Month' },
+            { id: 'custom', label: 'Custom' },
+          ].map(p => (
+            <button
+              key={p.id}
+              onClick={() => {
+                setDatePeriod(p.id);
+                setPage(1);
+              }}
+              className={`px-3 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                datePeriod === p.id
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* If Custom Date Period is chosen, show date pickers */}
+      {datePeriod === 'custom' && (
+        <div className="flex flex-wrap items-center gap-2 p-3 bg-white rounded-xl border border-slate-200 shadow-xs">
+          <span className="text-xs font-bold text-slate-700">Custom Date Range:</span>
+          <div className="flex items-center gap-1.5">
+            <input
+              type="date"
+              value={customStart}
+              onChange={e => {
+                setCustomStart(e.target.value);
+                setPage(1);
+              }}
+              className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-xl px-2.5 py-1.5 font-medium"
+            />
+            <span className="text-xs text-slate-400 font-bold">to</span>
+            <input
+              type="date"
+              value={customEnd}
+              onChange={e => {
+                setCustomEnd(e.target.value);
+                setPage(1);
+              }}
+              className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-xl px-2.5 py-1.5 font-medium"
+            />
+          </div>
+          {(customStart || customEnd) && (
+            <button
+              onClick={() => {
+                setCustomStart('');
+                setCustomEnd('');
+              }}
+              className="text-xs font-semibold text-rose-600 hover:text-rose-700 ml-2 cursor-pointer"
+            >
+              Reset Range
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Top 3 Status Dashboard Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {/* OPEN CARD */}
@@ -627,7 +720,17 @@ export const OperationCenter: React.FC<OperationCenterProps> = ({ onNavigate }) 
               {stats.total > 0 ? `${Math.round((stats.open / stats.total) * 100)}%` : '0%'}
             </span>
           </div>
-          <p className="text-[11px] text-slate-500 mt-1">Pending review & dispatch</p>
+          <p className="text-[11px] text-slate-500 mt-1">
+            {datePeriod === 'today'
+              ? 'Opened today'
+              : datePeriod === 'yesterday'
+              ? 'Opened yesterday'
+              : datePeriod === 'this_week'
+              ? 'Opened this week'
+              : datePeriod === 'this_month'
+              ? 'Opened this month'
+              : 'Pending review & dispatch'}
+          </p>
         </div>
 
         {/* IN PROGRESS CARD */}
@@ -654,7 +757,17 @@ export const OperationCenter: React.FC<OperationCenterProps> = ({ onNavigate }) 
               {stats.total > 0 ? `${Math.round((stats.inProgress / stats.total) * 100)}%` : '0%'}
             </span>
           </div>
-          <p className="text-[11px] text-slate-500 mt-1">Being resolved by Operation</p>
+          <p className="text-[11px] text-slate-500 mt-1">
+            {datePeriod === 'today'
+              ? 'In progress today'
+              : datePeriod === 'yesterday'
+              ? 'In progress yesterday'
+              : datePeriod === 'this_week'
+              ? 'Active work this week'
+              : datePeriod === 'this_month'
+              ? 'Active work this month'
+              : 'Being resolved by Operation'}
+          </p>
         </div>
 
         {/* CLOSED CARD */}
@@ -681,7 +794,17 @@ export const OperationCenter: React.FC<OperationCenterProps> = ({ onNavigate }) 
               {stats.total > 0 ? `${Math.round((stats.closed / stats.total) * 100)}%` : '0%'}
             </span>
           </div>
-          <p className="text-[11px] text-slate-500 mt-1">Completed with action taken</p>
+          <p className="text-[11px] text-slate-500 mt-1">
+            {datePeriod === 'today'
+              ? 'Resolved today'
+              : datePeriod === 'yesterday'
+              ? 'Resolved yesterday'
+              : datePeriod === 'this_week'
+              ? 'Resolved this week'
+              : datePeriod === 'this_month'
+              ? 'Resolved this month'
+              : 'Completed with action taken'}
+          </p>
         </div>
       </div>
 
