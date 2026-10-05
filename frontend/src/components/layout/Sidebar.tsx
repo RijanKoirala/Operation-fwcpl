@@ -17,7 +17,6 @@ import {
   X,
   ShieldCheck,
   PackageCheck,
-  MessagesSquare,
   Server,
   Zap,
   Megaphone,
@@ -120,13 +119,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: <ClipboardList className="w-5 h-5" />,
       allowedRoles: ['SUPER_ADMIN', 'MANAGEMENT', 'BRANCH_MANAGER', 'STAFF'],
       permissionKey: 'operation_center.view',
-    },
-    {
-      label: 'Discussion with Operation',
-      path: 'discussions',
-      icon: <MessagesSquare className="w-5 h-5" />,
-      allowedRoles: ['SUPER_ADMIN', 'MANAGEMENT', 'BRANCH_MANAGER', 'STAFF'],
-      permissionKey: 'discussions',
     },
     {
       label: 'NOC Issues',
@@ -234,7 +226,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     if (!roleAllowed) return false;
     if (item.permissionKey && !hasPermission(item.permissionKey)) {
       if (
-        item.permissionKey === 'discussions' ||
         item.permissionKey === 'electricity' ||
         item.permissionKey === 'information' ||
         item.permissionKey === 'assets.view' ||

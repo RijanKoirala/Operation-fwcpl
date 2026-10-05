@@ -25,7 +25,6 @@ import { Settings } from './pages/Settings';
 import { Profile } from './pages/Profile';
 import { Administration } from './pages/Administration';
 import { RequestGoods } from './pages/RequestGoods';
-import { Discussions } from './pages/Discussions';
 import { Pods } from './pages/Pods';
 import { ElectricityMeter } from './pages/ElectricityMeter';
 import { ShareInformation } from './pages/ShareInformation';
@@ -60,8 +59,8 @@ export const App: React.FC = () => {
       window.history.pushState(null, '', `/${clean}`);
     }
 
-    if (clean === 'noc' && isBranchScoped) {
-      setCurrentPage('discussions');
+    if ((clean === 'noc' && isBranchScoped) || clean === 'discussions') {
+      setCurrentPage('operation-center');
       return;
     }
     if (clean === 'follow-ups') {
@@ -128,9 +127,9 @@ export const App: React.FC = () => {
   }
 
   const renderContent = () => {
-    // If a branch-scoped user somehow hits 'noc', render Discussions directly
+    // If a branch-scoped user somehow hits 'noc', render Operation Center
     if (currentPage === 'noc' && isBranchScoped) {
-      return <Discussions />;
+      return <OperationCenter onNavigate={handleNavigate} />;
     }
 
     // Route-level permission protection
@@ -139,7 +138,6 @@ export const App: React.FC = () => {
       tasks: 'tasks',
       tickets: 'tickets',
       noc: 'noc',
-      discussions: 'discussions',
       pods: 'pods.view',
       connections: 'connections',
       followups: 'followups',
@@ -161,7 +159,6 @@ export const App: React.FC = () => {
     const requiredPerm = permMap[currentPage];
     if (
       requiredPerm &&
-      requiredPerm !== 'discussions' &&
       requiredPerm !== 'electricity' &&
       requiredPerm !== 'information' &&
       !hasPermission(requiredPerm)
@@ -204,9 +201,9 @@ export const App: React.FC = () => {
       case 'tickets':
         return <Tickets />;
       case 'discussions':
-        return <Discussions />;
+        return <OperationCenter onNavigate={handleNavigate} />;
       case 'noc':
-        return isBranchScoped ? <Discussions /> : <NocIssues />;
+        return isBranchScoped ? <OperationCenter onNavigate={handleNavigate} /> : <NocIssues />;
       case 'pods':
         return <Pods onNavigate={handleNavigate} initialPodId={selectedPodId} />;
       case 'electricity':
