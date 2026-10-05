@@ -23,6 +23,7 @@ import {
   Megaphone,
   Ticket,
   Package2,
+  ClipboardList,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
@@ -112,6 +113,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: <FileText className="w-5 h-5" />,
       allowedRoles: ['SUPER_ADMIN', 'MANAGEMENT', 'BRANCH_MANAGER', 'STAFF'],
       permissionKey: 'instructions',
+    },
+    {
+      label: 'Operation Center',
+      path: 'operation-center',
+      icon: <ClipboardList className="w-5 h-5" />,
+      allowedRoles: ['SUPER_ADMIN', 'MANAGEMENT', 'BRANCH_MANAGER', 'STAFF'],
+      permissionKey: 'operation_center.view',
     },
     {
       label: 'Discussion with Operation',

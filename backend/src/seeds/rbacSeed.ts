@@ -164,6 +164,14 @@ export const INITIAL_PERMISSIONS: PermissionDefinition[] = [
   { module: 'Assets', name: 'Edit Asset', key: 'assets.edit', description: 'Modify asset quantity or remarks' },
   { module: 'Assets', name: 'Delete Asset', key: 'assets.delete', description: 'Remove asset record from branch inventory' },
   { module: 'Assets', name: 'Manage Asset Types', key: 'assets.types.manage', description: 'Create, edit, or deactivate global asset types' },
+
+  // 24. Operation Center
+  { module: 'Operation Center', name: 'View Operation Center', key: 'operation_center.view', description: 'Access Operation Center module and view tickets' },
+  { module: 'Operation Center', name: 'View All Tickets', key: 'operation_center.view_all', description: 'View operation tickets across all branches' },
+  { module: 'Operation Center', name: 'Create Ticket', key: 'operation_center.create', description: 'Raise and submit new operation ticket' },
+  { module: 'Operation Center', name: 'Edit Ticket', key: 'operation_center.edit', description: 'Update ticket subject, description, priority, category' },
+  { module: 'Operation Center', name: 'Update Status / Remarks', key: 'operation_center.update_status', description: 'Change ticket status (In Progress) and post operation updates/remarks' },
+  { module: 'Operation Center', name: 'Close Ticket', key: 'operation_center.close', description: 'Resolve and close operation tickets' },
 ];
 
 export const seedRbacData = async (): Promise<void> => {
@@ -254,6 +262,7 @@ export const seedRbacData = async (): Promise<void> => {
           'electricity.payment.view', 'electricity.payment.create', 'electricity.payment.edit', 'electricity.history.view',
           'information.view', 'information.create', 'information.edit', 'information.publish', 'information.delete', 'information.pin', 'information.view_history',
           'assets.view', 'assets.view_all', 'assets.create', 'assets.edit', 'assets.delete', 'assets.types.manage',
+          'operation_center.view', 'operation_center.view_all', 'operation_center.create', 'operation_center.edit', 'operation_center.update_status', 'operation_center.close',
         ],
       },
       {
@@ -273,6 +282,7 @@ export const seedRbacData = async (): Promise<void> => {
           'pods.history.view',
           'information.view',
           'assets.view', 'assets.view_all',
+          'operation_center.view', 'operation_center.view_all', 'operation_center.create', 'operation_center.edit', 'operation_center.update_status', 'operation_center.close',
         ],
       },
       {
@@ -296,6 +306,7 @@ export const seedRbacData = async (): Promise<void> => {
           'electricity.view', 'electricity.readings.view', 'electricity.readings.create', 'electricity.payment.view', 'electricity.history.view',
           'information.view',
           'assets.view', 'assets.create', 'assets.edit',
+          'operation_center.view', 'operation_center.create', 'operation_center.edit',
         ],
       },
     ];
@@ -339,9 +350,9 @@ export const seedRbacData = async (): Promise<void> => {
           );
         }
       } else {
-        // Also ensure newly introduced assets permissions are linked to existing default roles
+        // Also ensure newly introduced assets & operation_center permissions are linked to existing default roles
         for (const pKey of r.permissions) {
-          if (pKey.startsWith('assets.')) {
+          if (pKey.startsWith('assets.') || pKey.startsWith('operation_center.')) {
             const pId = permIdMap[pKey];
             if (pId) {
               await db.query(
@@ -435,6 +446,8 @@ export const seedRbacData = async (): Promise<void> => {
       goods_items: true,
       discussions: true,
       pods: true,
+      assets: true,
+      operation_center: true,
     };
 
     if (superAdminCheck.rowCount === 0) {

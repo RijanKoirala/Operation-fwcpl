@@ -380,6 +380,24 @@ export const api = {
     exportCsvUrl: (params?: any) => `/api/assets/export/csv${toQueryString(params)}`,
   },
 
+  // Operation Center Module
+  operationCenter: {
+    getStats: (params?: any) => api.get(`/operation-tickets/stats${toQueryString(params)}`),
+    getAll: (params?: any) => api.get(`/operation-tickets${toQueryString(params)}`),
+    getById: (id: number) => api.get(`/operation-tickets/${id}`),
+    create: (data: FormData | any) => api.post('/operation-tickets', data),
+    update: (id: number, data: FormData | any) => api.put(`/operation-tickets/${id}`, data),
+    updateStatus: (id: number, data: { status: string; remark?: string; resolution?: string; actionTaken?: string }) =>
+      api.patch(`/operation-tickets/${id}/status`, data),
+    addUpdate: (id: number, data: { message: string }) =>
+      api.post(`/operation-tickets/${id}/updates`, data),
+    addAttachments: (id: number, formData: FormData) =>
+      api.post(`/operation-tickets/${id}/attachments`, formData),
+    deleteAttachment: (ticketId: number, attachmentId: number) =>
+      api.delete(`/operation-tickets/${ticketId}/attachments/${attachmentId}`),
+  },
+
 };
+
 
 

@@ -745,4 +745,78 @@ export interface AssetSummary {
   most_common_asset: string;
 }
 
+export type OperationCategory =
+  | 'HR / ADMIN'
+  | 'Technical / Network Issue'
+  | 'Revenue'
+  | 'Sales'
+  | 'Billing'
+  | 'Customer Complain'
+  | 'Hardware and Equipment'
+  | 'Maintenance'
+  | 'Others';
+
+export type OperationPriority = 'Low' | 'Medium' | 'High' | 'Urgent';
+export type OperationStatus = 'OPEN' | 'IN_PROGRESS' | 'CLOSED';
+
+export interface OperationTicketAttachment {
+  id: number;
+  ticket_id: number;
+  file_url: string;
+  file_name: string;
+  mime_type?: string;
+  file_size?: number;
+  uploaded_by?: number;
+  uploaded_by_name?: string;
+  created_at: string;
+}
+
+export interface OperationTicketUpdate {
+  id: number;
+  ticket_id: number;
+  user_id: number;
+  user_name?: string;
+  user_role?: string;
+  update_type: 'CREATED' | 'STATUS_CHANGE' | 'REMARK' | 'EDIT' | 'CLOSED' | 'REOPENED';
+  message: string;
+  old_status?: OperationStatus | null;
+  new_status?: OperationStatus | null;
+  created_at: string;
+}
+
+export interface OperationTicket {
+  id: number;
+  ticket_id: string;
+  branch_id: number;
+  branch_name: string;
+  branch_code?: string;
+  created_by: number;
+  created_by_name?: string;
+  created_by_username?: string;
+  created_by_phone?: string;
+  category: OperationCategory;
+  priority: OperationPriority;
+  subject: string;
+  description: string;
+  status: OperationStatus;
+  resolution?: string | null;
+  closed_by?: number | null;
+  closed_by_name?: string | null;
+  closed_at?: string | null;
+  attachments_count?: number;
+  updates_count?: number;
+  attachments?: OperationTicketAttachment[];
+  updates?: OperationTicketUpdate[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OperationTicketStats {
+  open: number;
+  inProgress: number;
+  closed: number;
+  total: number;
+}
+
+
 

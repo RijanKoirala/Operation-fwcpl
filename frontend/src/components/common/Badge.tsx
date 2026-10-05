@@ -52,12 +52,14 @@ export const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
   switch (status) {
     case 'Completed':
     case 'Closed':
+    case 'CLOSED':
     case 'Resolved':
     case 'Activated':
     case 'Active':
     case 'Achieved':
-      return <Badge variant="success" dot>{status}</Badge>;
+      return <Badge variant="success" dot>{status === 'CLOSED' ? 'Closed' : status}</Badge>;
     case 'In Progress':
+    case 'IN_PROGRESS':
     case 'Installed':
     case 'Site Survey Completed':
     case 'Partially Achieved':
@@ -70,6 +72,8 @@ export const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
       return <Badge variant="purple" dot>{status}</Badge>;
     case 'New':
     case 'New Request':
+    case 'Open':
+    case 'OPEN':
     case 'Pending':
     case 'Site Survey Required':
     case 'Documents Pending':

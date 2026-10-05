@@ -119,7 +119,7 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
         'dashboard', 'admins', 'roles', 'permissions', 'departments', 'branches',
         'targets', 'tasks', 'reports', 'commands', 'instructions', 'noc',
         'connections', 'tickets', 'followups', 'settings', 'audit', 'staff',
-        'goods_requests', 'goods_items', 'discussions', 'pods', 'electricity', 'information'
+        'goods_requests', 'goods_items', 'discussions', 'pods', 'electricity', 'information', 'assets', 'operation_center'
       ].forEach(m => {
         effectivePermissions[m] = true;
       });

@@ -30,6 +30,7 @@ import { Pods } from './pages/Pods';
 import { ElectricityMeter } from './pages/ElectricityMeter';
 import { ShareInformation } from './pages/ShareInformation';
 import { Assets } from './pages/Assets';
+import { OperationCenter } from './pages/OperationCenter';
 
 export const App: React.FC = () => {
   const { user, isLoading, hasPermission } = useAuth();
@@ -154,6 +155,7 @@ export const App: React.FC = () => {
       electricity: 'electricity',
       'share-information': 'information',
       information: 'information',
+      'operation-center': 'operation_center',
     };
 
     const requiredPerm = permMap[currentPage];
@@ -240,6 +242,8 @@ export const App: React.FC = () => {
         return <AuditLogs />;
       case 'request-goods':
         return <RequestGoods onNavigate={handleNavigate} />;
+      case 'operation-center':
+        return <OperationCenter onNavigate={handleNavigate} />;
       case 'settings':
         return <Settings />;
       case 'profile':
