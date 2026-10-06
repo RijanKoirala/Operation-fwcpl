@@ -8,10 +8,11 @@ const router = Router();
 
 // GET /api/branches
 router.get('/', authenticate, requirePermission('branches.view'), async (req: Request, res: Response) => {
-  const { search, status, city, province, page = '1', limit = '50' } = req.query;
+  const { search, status, city, province, page = '1', limit = '100' } = req.query;
+  const isAll = String(limit || '').toLowerCase() === 'all';
   const pageNum = parseInt(page as string, 10) || 1;
-  const limitNum = parseInt(limit as string, 10) || 50;
-  const offset = (pageNum - 1) * limitNum;
+  const limitNum = isAll ? 1000 : (parseInt(limit as string, 10) || 100);
+  const offset = isAll ? 0 : (pageNum - 1) * limitNum;
 
   try {
     let whereClauses: string[] = [];
@@ -363,8 +364,19 @@ router.put('/:id', authenticate, requirePermission('branches.edit'), async (req:
 });
 
 // DELETE /api/branches/:id
-router.delete('/:id', authenticate, requirePermission('branches.delete'), async (req: Request, res: Response) => {
+router.delete('/:id', authenticate, async (req: Request, res: Response) => {
   const branchId = parseInt(req.params.id, 10);
+  if (isNaN(branchId)) return res.status(400).json({ success: false, message: 'Invalid branch ID.' });
+
+  // Authorization check: Super Admin or users with branches.delete / branches permission or MANAGEMENT role
+  const roleNameUpper = ((req.user?.role || req.user?.roleName || '') as string).toUpperCase().replace(/\s+/g, '_');
+  const isSuperAdmin = roleNameUpper === 'SUPER_ADMIN' || (req.user?.username || '').toLowerCase() === 'superadmin';
+  const hasDeletePerm = req.user?.permissions && (req.user.permissions['branches.delete'] === true || req.user.permissions['branches'] === true);
+  const isManagement = roleNameUpper === 'MANAGEMENT' || roleNameUpper === 'OPERATION_MANAGER';
+
+  if (!isSuperAdmin && !hasDeletePerm && !isManagement) {
+    return res.status(403).json({ success: false, message: "Forbidden: You do not have permission for 'branches.delete'." });
+  }
 
   try {
     const branchCheck = await db.query('SELECT * FROM branches WHERE id = $1', [branchId]);
@@ -374,16 +386,100 @@ router.delete('/:id', authenticate, requirePermission('branches.delete'), async 
 
     const branch = branchCheck.rows[0];
 
-    // Safely clear foreign key references before deletion
+    // Safely clear all foreign key references before deletion
     await db.query('UPDATE users SET branch_id = NULL WHERE branch_id = $1', [branchId]);
-    await db.query('DELETE FROM user_branches WHERE branch_id = $1', [branchId]);
-    await db.query('DELETE FROM tasks WHERE branch_id = $1', [branchId]);
-    await db.query('DELETE FROM connections WHERE branch_id = $1', [branchId]);
-    await db.query('DELETE FROM support_tickets WHERE branch_id = $1', [branchId]);
-    await db.query('DELETE FROM follow_ups WHERE branch_id = $1', [branchId]);
-    await db.query('DELETE FROM targets WHERE branch_id = $1', [branchId]);
-    await db.query('DELETE FROM goods_requests WHERE branch_id = $1', [branchId]);
-    await db.query('DELETE FROM pods WHERE branch_id = $1', [branchId]);
+    await db.query('UPDATE branches SET manager_id = NULL WHERE id = $1', [branchId]);
+    try {
+      await db.query('UPDATE noc_incidents SET branch_id = NULL WHERE branch_id = $1', [branchId]);
+    } catch {}
+
+    // 1. Operation Center Tickets & Updates/Attachments
+    try {
+      await db.query(`DELETE FROM operation_ticket_attachments WHERE ticket_id IN (SELECT id FROM operation_tickets WHERE branch_id = $1)`, [branchId]);
+      await db.query(`DELETE FROM operation_ticket_updates WHERE ticket_id IN (SELECT id FROM operation_tickets WHERE branch_id = $1)`, [branchId]);
+      await db.query(`DELETE FROM operation_tickets WHERE branch_id = $1`, [branchId]);
+    } catch (e: any) { console.warn('Clean operation_tickets warning:', e.message); }
+
+    // 2. Electricity Meters & Readings/Payments
+    try {
+      await db.query(`DELETE FROM electricity_payments WHERE meter_id IN (SELECT id FROM electricity_meters WHERE branch_id = $1)`, [branchId]);
+      await db.query(`DELETE FROM electricity_readings WHERE meter_id IN (SELECT id FROM electricity_meters WHERE branch_id = $1)`, [branchId]);
+      await db.query(`DELETE FROM electricity_meters WHERE branch_id = $1`, [branchId]);
+    } catch (e: any) { console.warn('Clean electricity warning:', e.message); }
+
+    // 3. Branch Assets
+    try {
+      await db.query(`DELETE FROM branch_assets WHERE branch_id = $1`, [branchId]);
+    } catch (e: any) { console.warn('Clean branch_assets warning:', e.message); }
+
+    // 4. Information Branches
+    try {
+      await db.query(`DELETE FROM information_branches WHERE branch_id = $1`, [branchId]);
+    } catch (e: any) { console.warn('Clean information_branches warning:', e.message); }
+
+    // 5. Discussion Topics & Messages
+    try {
+      await db.query(`DELETE FROM discussion_messages WHERE topic_id IN (SELECT id FROM discussion_topics WHERE branch_id = $1)`, [branchId]);
+      await db.query(`DELETE FROM discussion_topics WHERE branch_id = $1`, [branchId]);
+    } catch (e: any) { console.warn('Clean discussions warning:', e.message); }
+
+    // 6. Instructions & Comments
+    try {
+      await db.query(`DELETE FROM instruction_comments WHERE instruction_id IN (SELECT id FROM instructions WHERE branch_id = $1)`, [branchId]);
+      await db.query(`DELETE FROM instructions WHERE branch_id = $1`, [branchId]);
+    } catch (e: any) { console.warn('Clean instructions warning:', e.message); }
+
+    // 7. PODs, Items & History
+    try {
+      await db.query(`DELETE FROM pod_history WHERE pod_id IN (SELECT id FROM pods WHERE branch_id = $1)`, [branchId]);
+      await db.query(`DELETE FROM pod_items WHERE pod_id IN (SELECT id FROM pods WHERE branch_id = $1)`, [branchId]);
+      await db.query(`DELETE FROM pods WHERE branch_id = $1`, [branchId]);
+    } catch (e: any) { console.warn('Clean pods warning:', e.message); }
+
+    // 8. Goods Requests, Items & History
+    try {
+      await db.query(`DELETE FROM goods_request_history WHERE request_id IN (SELECT id FROM goods_requests WHERE branch_id = $1)`, [branchId]);
+      await db.query(`DELETE FROM goods_request_items WHERE request_id IN (SELECT id FROM goods_requests WHERE branch_id = $1)`, [branchId]);
+      await db.query(`DELETE FROM goods_requests WHERE branch_id = $1`, [branchId]);
+    } catch (e: any) { console.warn('Clean goods_requests warning:', e.message); }
+
+    // 9. Targets
+    try {
+      await db.query(`DELETE FROM targets WHERE branch_id = $1`, [branchId]);
+    } catch (e: any) { console.warn('Clean targets warning:', e.message); }
+
+    // 10. Follow-ups
+    try {
+      await db.query(`DELETE FROM follow_ups WHERE branch_id = $1`, [branchId]);
+    } catch (e: any) { console.warn('Clean follow_ups warning:', e.message); }
+
+    // 11. Support Tickets & Comments
+    try {
+      await db.query(`DELETE FROM support_comments WHERE ticket_id IN (SELECT id FROM support_tickets WHERE branch_id = $1)`, [branchId]);
+      await db.query(`DELETE FROM support_tickets WHERE branch_id = $1`, [branchId]);
+    } catch (e: any) { console.warn('Clean support_tickets warning:', e.message); }
+
+    // 12. Connections & Comments/Staff
+    try {
+      await db.query(`DELETE FROM connection_comments WHERE connection_id IN (SELECT id FROM connections WHERE branch_id = $1)`, [branchId]);
+      await db.query(`DELETE FROM connection_staff WHERE connection_id IN (SELECT id FROM connections WHERE branch_id = $1)`, [branchId]);
+      await db.query(`DELETE FROM connections WHERE branch_id = $1`, [branchId]);
+    } catch (e: any) { console.warn('Clean connections warning:', e.message); }
+
+    // 13. Tasks & Comments/Staff/History
+    try {
+      await db.query(`DELETE FROM task_comments WHERE task_id IN (SELECT id FROM tasks WHERE branch_id = $1)`, [branchId]);
+      await db.query(`DELETE FROM task_status_history WHERE task_id IN (SELECT id FROM tasks WHERE branch_id = $1)`, [branchId]);
+      await db.query(`DELETE FROM task_staff WHERE task_id IN (SELECT id FROM tasks WHERE branch_id = $1)`, [branchId]);
+      await db.query(`DELETE FROM tasks WHERE branch_id = $1`, [branchId]);
+    } catch (e: any) { console.warn('Clean tasks warning:', e.message); }
+
+    // 14. User Branches
+    try {
+      await db.query(`DELETE FROM user_branches WHERE branch_id = $1`, [branchId]);
+    } catch (e: any) { console.warn('Clean user_branches warning:', e.message); }
+
+    // 15. Finally, Delete the Branch itself!
     await db.query('DELETE FROM branches WHERE id = $1', [branchId]);
 
     await logActivity({
@@ -397,7 +493,8 @@ router.delete('/:id', authenticate, requirePermission('branches.delete'), async 
 
     return res.json({ success: true, message: `Branch '${branch.name}' has been deleted successfully.` });
   } catch (err: any) {
-    return res.status(500).json({ success: false, message: err.message });
+    console.error('DELETE /api/branches/:id error:', err);
+    return res.status(500).json({ success: false, message: `Failed to delete branch: ${err.message}` });
   }
 });
 

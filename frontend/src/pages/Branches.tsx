@@ -18,8 +18,17 @@ export const Branches: React.FC<BranchesPageProps> = ({ onNavigate }) => {
   const [statusFilter, setStatusFilter] = useState('');
   const [cityFilter, setCityFilter] = useState('');
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(100);
   const [totalPages, setTotalPages] = useState(1);
+  const [totalCount, setTotalCount] = useState<number>(0);
   const [showAddModal, setShowAddModal] = useState(false);
+
+  // Role & Permissions
+  const roleNameUpper = ((user?.role || (user as any)?.roleName || (user as any)?.role_name || '') as string).toUpperCase().replace(/\s+/g, '_');
+  const isSuperAdmin = roleNameUpper === 'SUPER_ADMIN' || (user?.username || '').toLowerCase() === 'superadmin';
+  const canCreateBranch = isSuperAdmin || hasPermission('branches.create') || roleNameUpper === 'MANAGEMENT' || roleNameUpper === 'OPERATION_MANAGER';
+  const canEditBranch = isSuperAdmin || hasPermission('branches.edit') || roleNameUpper === 'MANAGEMENT' || roleNameUpper === 'OPERATION_MANAGER';
+  const canDeleteBranch = isSuperAdmin || hasPermission('branches.delete') || roleNameUpper === 'MANAGEMENT' || roleNameUpper === 'OPERATION_MANAGER';
 
   // Edit State
   const [showEditModal, setShowEditModal] = useState(false);
@@ -48,7 +57,7 @@ export const Branches: React.FC<BranchesPageProps> = ({ onNavigate }) => {
     try {
       const query = new URLSearchParams({
         page: String(page),
-        limit: '20',
+        limit: String(pageSize),
         search,
         status: statusFilter,
         city: cityFilter,
@@ -57,7 +66,8 @@ export const Branches: React.FC<BranchesPageProps> = ({ onNavigate }) => {
       const res = await api.get(`/branches?${query}`);
       if (res.success) {
         setBranches(res.branches);
-        setTotalPages(res.pagination.totalPages);
+        setTotalPages(res.pagination?.totalPages || 1);
+        setTotalCount(res.pagination?.total || res.branches.length);
       }
     } catch (err) {
       console.error(err);
@@ -68,7 +78,7 @@ export const Branches: React.FC<BranchesPageProps> = ({ onNavigate }) => {
 
   useEffect(() => {
     fetchBranches();
-  }, [page, search, statusFilter, cityFilter]);
+  }, [page, pageSize, search, statusFilter, cityFilter]);
 
   const handleCreateBranch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -154,16 +164,21 @@ export const Branches: React.FC<BranchesPageProps> = ({ onNavigate }) => {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight">Branch Management</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-black text-slate-900 tracking-tight">Branch Management</h1>
+            <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100">
+              {totalCount || branches.length} Branches
+            </span>
+          </div>
           <p className="text-xs text-slate-500 font-medium mt-0.5">
-            Operational directories, performance dashboards, and facilities across 20+ branches
+            Operational directories, performance dashboards, and facilities across {totalCount || branches.length} enterprise branches
           </p>
         </div>
 
-        {user?.role === 'SUPER_ADMIN' && (
+        {canCreateBranch && (
           <button
             onClick={() => setShowAddModal(true)}
-            className="px-4 py-2 bg-brand-600 text-white font-bold text-xs rounded-xl hover:bg-brand-700 shadow-sm flex items-center gap-1.5 transition-colors"
+            className="px-4 py-2 bg-indigo-600 text-white font-bold text-xs rounded-xl hover:bg-indigo-700 shadow-sm flex items-center gap-1.5 transition-colors cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             Add New Branch
@@ -227,7 +242,7 @@ export const Branches: React.FC<BranchesPageProps> = ({ onNavigate }) => {
                 </div>
 
                 <div className="flex items-center gap-1">
-                  {(user?.role === 'SUPER_ADMIN' || hasPermission('branches.edit')) && (
+                  {canEditBranch && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -239,7 +254,7 @@ export const Branches: React.FC<BranchesPageProps> = ({ onNavigate }) => {
                       <Edit2 className="w-3.5 h-3.5" />
                     </button>
                   )}
-                  {(user?.role === 'SUPER_ADMIN' || hasPermission('branches.delete')) && (
+                  {canDeleteBranch && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -296,6 +311,68 @@ export const Branches: React.FC<BranchesPageProps> = ({ onNavigate }) => {
           </div>
         ))}
       </div>
+
+      {/* Pagination & Page Size Control */}
+      {totalCount > 0 && (
+        <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4 mt-6">
+          <div className="text-xs text-slate-500 font-medium">
+            Showing <span className="font-bold text-slate-800">{branches.length > 0 ? (page - 1) * pageSize + 1 : 0}</span> to{' '}
+            <span className="font-bold text-slate-800">{Math.min(page * pageSize, totalCount)}</span> of{' '}
+            <span className="font-bold text-indigo-600">{totalCount}</span> branches
+          </div>
+
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-slate-400">Show:</span>
+              <select
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setPage(1);
+                }}
+                className="text-xs font-semibold bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-slate-700 focus:outline-none cursor-pointer"
+              >
+                <option value={20}>20 / page</option>
+                <option value={50}>50 / page</option>
+                <option value={100}>100 / page</option>
+                <option value={500}>All</option>
+              </select>
+            </div>
+
+            {totalPages > 1 && (
+              <div className="flex items-center gap-1">
+                <button
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  className="px-2.5 py-1 text-xs font-bold rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                >
+                  Prev
+                </button>
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => setPage(p)}
+                    className={`w-7 h-7 text-xs font-bold rounded-lg transition-colors cursor-pointer ${
+                      p === page
+                        ? 'bg-indigo-600 text-white shadow-xs'
+                        : 'border border-slate-200 text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    {p}
+                  </button>
+                ))}
+                <button
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  className="px-2.5 py-1 text-xs font-bold rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                >
+                  Next
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {branches.length === 0 && !loading && (
         <div className="bg-white p-12 text-center rounded-2xl border border-slate-100">

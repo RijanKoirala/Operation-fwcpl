@@ -239,7 +239,7 @@ export const seedRbacData = async (): Promise<void> => {
         isSystem: true,
         permissions: [
           'dashboard.view',
-          'branches.view', 'branches.create', 'branches.edit',
+          'branches.view', 'branches.create', 'branches.edit', 'branches.delete',
           'targets.view', 'targets.create', 'targets.edit', 'targets.assign',
           'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.assign', 'tasks.complete',
           'reports.view', 'reports.export',
@@ -350,9 +350,9 @@ export const seedRbacData = async (): Promise<void> => {
           );
         }
       } else {
-        // Also ensure newly introduced assets & operation_center permissions are linked to existing default roles
+        // Also ensure newly introduced assets & operation_center & branches.delete permissions are linked to existing default roles
         for (const pKey of r.permissions) {
-          if (pKey.startsWith('assets.') || pKey.startsWith('operation_center.')) {
+          if (pKey.startsWith('assets.') || pKey.startsWith('operation_center.') || pKey === 'branches.delete') {
             const pId = permIdMap[pKey];
             if (pId) {
               await db.query(
