@@ -91,6 +91,12 @@ class DatabaseManager {
       } catch (opErr: any) {
         console.error('⚠️ Operation tickets auto-seed warning:', opErr.message);
       }
+      try {
+        const { seedBranchStaffData } = await import('../seeds/branchStaffSeed');
+        await seedBranchStaffData();
+      } catch (stErr: any) {
+        console.error('⚠️ Branch staff auto-seed warning:', stErr.message);
+      }
     } catch (pgErr: any) {
       console.error('❌ PostgreSQL Connection Failed:', pgErr.message);
       throw new Error(`Critical: Unable to connect to PostgreSQL database (${pgErr.message}).`);
