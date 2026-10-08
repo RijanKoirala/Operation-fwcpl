@@ -22,7 +22,6 @@ import {
   ChevronRight,
   RefreshCw,
   ExternalLink,
-  FileSpreadsheet,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -293,27 +292,6 @@ export const OperationCenter: React.FC<OperationCenterProps> = ({ onNavigate }) 
     setCustomStart('');
     setCustomEnd('');
     setPage(1);
-  };
-
-  const [syncing, setSyncing] = useState(false);
-
-  const handleSyncHistorical = async () => {
-    if (!window.confirm('Sync and import all historical tickets from Excel file into Operation Center?')) return;
-    setSyncing(true);
-    try {
-      const res = await api.operationCenter.seedHistorical();
-      if (res.success) {
-        alert(res.message || 'Historical Excel tickets synced successfully.');
-        fetchTickets();
-        fetchStats();
-      } else {
-        alert(res.message || 'Failed to sync historical tickets.');
-      }
-    } catch (err: any) {
-      alert(err.message || 'Error syncing historical tickets.');
-    } finally {
-      setSyncing(false);
-    }
   };
 
   const hasActiveFilters = Boolean(
@@ -626,18 +604,6 @@ export const OperationCenter: React.FC<OperationCenterProps> = ({ onNavigate }) 
         </div>
 
         <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto">
-          {canManageTickets && (
-            <button
-              onClick={handleSyncHistorical}
-              disabled={syncing}
-              className="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-xs rounded-xl border border-emerald-200 shadow-2xs flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
-              title="Sync & import all historical tickets from Excel"
-            >
-              <FileSpreadsheet className={`w-4 h-4 text-emerald-600 ${syncing ? 'animate-pulse' : ''}`} />
-              <span>{syncing ? 'Syncing Excel...' : 'Sync Excel Data'}</span>
-            </button>
-          )}
-
           <button
             onClick={openCreateModal}
             className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer"
