@@ -172,6 +172,15 @@ export const INITIAL_PERMISSIONS: PermissionDefinition[] = [
   { module: 'Operation Center', name: 'Edit Ticket', key: 'operation_center.edit', description: 'Update ticket subject, description, priority, category' },
   { module: 'Operation Center', name: 'Update Status / Remarks', key: 'operation_center.update_status', description: 'Change ticket status (In Progress) and post operation updates/remarks' },
   { module: 'Operation Center', name: 'Close Ticket', key: 'operation_center.close', description: 'Resolve and close operation tickets' },
+
+  // 25. Accounts (Revenue & Reports)
+  { module: 'Accounts', name: 'View Accounts Module', key: 'accounts.view', description: 'Access Accounts module overview and main interface' },
+  { module: 'Accounts', name: 'View Accounts Dashboard', key: 'accounts.dashboard', description: 'View company-wide revenue dashboard, KPI summaries, and branch metrics' },
+  { module: 'Accounts', name: 'View Revenue Records', key: 'accounts.revenue.view', description: 'View revenue collection records for permitted branches' },
+  { module: 'Accounts', name: 'Create Revenue Entry', key: 'accounts.revenue.create', description: 'Record new daily revenue collection' },
+  { module: 'Accounts', name: 'Edit Revenue Entry', key: 'accounts.revenue.edit', description: 'Modify existing revenue collection records' },
+  { module: 'Accounts', name: 'View Revenue Reports', key: 'accounts.reports.view', description: 'Access graphical revenue analytics, charts, and branch comparison' },
+  { module: 'Accounts', name: 'Export Revenue Data', key: 'accounts.export', description: 'Export revenue collections and reports to CSV / Excel' },
 ];
 
 export const seedRbacData = async (): Promise<void> => {
@@ -307,6 +316,7 @@ export const seedRbacData = async (): Promise<void> => {
           'information.view',
           'assets.view', 'assets.create', 'assets.edit',
           'operation_center.view', 'operation_center.create', 'operation_center.edit',
+          'accounts.revenue.view', 'accounts.revenue.create', 'accounts.revenue.edit',
         ],
       },
     ];
@@ -350,9 +360,9 @@ export const seedRbacData = async (): Promise<void> => {
           );
         }
       } else {
-        // Also ensure newly introduced assets & operation_center & branches.delete permissions are linked to existing default roles
+        // Also ensure newly introduced assets & operation_center & accounts & branches.delete permissions are linked to existing default roles
         for (const pKey of r.permissions) {
-          if (pKey.startsWith('assets.') || pKey.startsWith('operation_center.') || pKey === 'branches.delete') {
+          if (pKey.startsWith('assets.') || pKey.startsWith('operation_center.') || pKey.startsWith('accounts.') || pKey === 'branches.delete') {
             const pId = permIdMap[pKey];
             if (pId) {
               await db.query(
@@ -448,6 +458,7 @@ export const seedRbacData = async (): Promise<void> => {
       pods: true,
       assets: true,
       operation_center: true,
+      accounts: true,
     };
 
     if (superAdminCheck.rowCount === 0) {

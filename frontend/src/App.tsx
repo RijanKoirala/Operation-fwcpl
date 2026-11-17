@@ -30,6 +30,7 @@ import { ElectricityMeter } from './pages/ElectricityMeter';
 import { ShareInformation } from './pages/ShareInformation';
 import { Assets } from './pages/Assets';
 import { OperationCenter } from './pages/OperationCenter';
+import { Accounts } from './pages/Accounts';
 
 export const App: React.FC = () => {
   const { user, isLoading, hasPermission } = useAuth();
@@ -42,10 +43,10 @@ export const App: React.FC = () => {
   const userRole = (user?.role || '').toUpperCase().replace(/\s+/g, '_');
   const roleNameUpper = ((user as any)?.roleName || (user as any)?.role_name || '').toUpperCase().replace(/\s+/g, '_');
   const userDept = (user?.departmentCode || user?.department_code || '').toUpperCase();
+  const isSuperAdmin = userRole === 'SUPER_ADMIN' || roleNameUpper === 'SUPER_ADMIN' || (user?.username || '').toLowerCase() === 'superadmin';
   const isBranchScoped = Boolean(
     (user?.branchId || user?.branch_id) &&
-    userRole !== 'SUPER_ADMIN' &&
-    roleNameUpper !== 'SUPER_ADMIN' &&
+    !isSuperAdmin &&
     userRole !== 'MANAGEMENT' &&
     roleNameUpper !== 'MANAGEMENT' &&
     userDept !== 'EXEC' &&
@@ -154,6 +155,10 @@ export const App: React.FC = () => {
       'share-information': 'information',
       information: 'information',
       'operation-center': 'operation_center',
+      accounts: 'accounts.revenue.view',
+      'accounts/revenue': 'accounts.revenue.view',
+      'accounts/report': 'accounts.reports.view',
+      'accounts/reports': 'accounts.reports.view',
     };
 
     const requiredPerm = permMap[currentPage];
@@ -241,6 +246,16 @@ export const App: React.FC = () => {
         return <RequestGoods onNavigate={handleNavigate} />;
       case 'operation-center':
         return <OperationCenter onNavigate={handleNavigate} />;
+      case 'accounts':
+        if (!isSuperAdmin && !hasPermission('accounts.dashboard') && hasPermission('accounts.revenue.view')) {
+          return <Accounts initialTab="revenue" onNavigate={handleNavigate} />;
+        }
+        return <Accounts initialTab="dashboard" onNavigate={handleNavigate} />;
+      case 'accounts/revenue':
+        return <Accounts initialTab="revenue" onNavigate={handleNavigate} />;
+      case 'accounts/report':
+      case 'accounts/reports':
+        return <Accounts initialTab="reports" onNavigate={handleNavigate} />;
       case 'settings':
         return <Settings />;
       case 'profile':

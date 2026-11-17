@@ -403,6 +403,17 @@ export const api = {
     seedHistorical: () => api.post('/operation-tickets/seed-historical', {}),
   },
 
+  // Accounts Module (Revenue & Reports)
+  accounts: {
+    getDashboard: (params?: any) => api.get(`/accounts/dashboard${toQueryString(params)}`),
+    getReports: (params?: any) => api.get(`/accounts/reports${toQueryString(params)}`),
+    getRevenues: (params?: any) => api.get(`/accounts/revenue${toQueryString(params)}`),
+    getRevenueById: (id: number) => api.get(`/accounts/revenue/${id}`),
+    createRevenue: (data: any) => api.post('/accounts/revenue', data),
+    updateRevenue: (id: number, data: any) => api.put(`/accounts/revenue/${id}`, data),
+    voidRevenue: (id: number, data?: { reason?: string }) => api.patch(`/accounts/revenue/${id}/void`, data || {}),
+    exportCsvUrl: (params?: any) => `/api/accounts/export${toQueryString(params)}`,
+  },
 };
 
 

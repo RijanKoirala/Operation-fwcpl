@@ -33,6 +33,7 @@ import electricityRoutes from './routes/electricity.routes';
 import informationRoutes from './routes/information.routes';
 import assetsRouter from './routes/assets.routes';
 import operationTicketsRouter from './routes/operationTickets.routes';
+import accountsRoutes from './routes/accounts.routes';
 
 const app = express();
 
@@ -82,6 +83,7 @@ app.use('/api/electricity', electricityRoutes);
 app.use('/api/information', informationRoutes);
 app.use('/api/assets', assetsRouter);
 app.use('/api/operation-tickets', operationTicketsRouter);
+app.use('/api/accounts', accountsRoutes);
 
 // Global Error Handler
 app.use((err: any, req: Request, res: Response, next: any) => {

@@ -818,5 +818,76 @@ export interface OperationTicketStats {
   total: number;
 }
 
+// Accounts Module Interfaces
+export interface BranchRevenue {
+  id: number;
+  branchId: number;
+  branchName: string;
+  branchCode?: string;
+  revenueDate: string;
+  amount: number;
+  remarks?: string;
+  status: 'Active' | 'Voided';
+  createdAt: string;
+  updatedAt: string;
+  createdBy?: number;
+  createdByName?: string;
+  updatedBy?: number;
+  updatedByName?: string;
+}
+
+export interface AccountsDashboardCards {
+  today: number;
+  yesterday: number;
+  thisWeek: number;
+  thisMonth: number;
+  thisYear: number;
+  selectedPeriod: number;
+  selectedEntries: number;
+  periodLabel: string;
+}
+
+export interface BranchRevenueSummaryItem {
+  branchId: number;
+  branchName: string;
+  branchCode?: string;
+  city?: string;
+  todayRevenue: number;
+  yesterdayRevenue: number;
+  monthRevenue: number;
+  yearRevenue: number;
+  selectedRevenue: number;
+  entriesCount: number;
+}
+
+export interface AccountsReportTrendPoint {
+  bucket: string;
+  date: string;
+  amount: number;
+  entries: number;
+}
+
+export interface BranchComparisonItem {
+  branchId: number;
+  branchName: string;
+  branchCode?: string;
+  totalAmount: number;
+  percentage: number;
+  entriesCount: number;
+  activeDays: number;
+  avgDaily: number;
+  maxDaily: number;
+  minDaily: number;
+}
+
+export interface AccountsReportMetrics {
+  totalRevenue: number;
+  totalEntries: number;
+  averageDaily: number;
+  activeDays: number;
+  highestBranch: { name: string; amount: number } | null;
+  lowestBranch: { name: string; amount: number } | null;
+}
+
 
 
