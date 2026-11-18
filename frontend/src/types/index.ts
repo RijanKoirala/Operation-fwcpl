@@ -821,11 +821,18 @@ export interface OperationTicketStats {
 // Accounts Module Interfaces
 export interface BranchRevenue {
   id: number;
+  revenueCode?: string;
   branchId: number;
   branchName: string;
   branchCode?: string;
   revenueDate: string;
   amount: number;
+  collectionType: 'CASH' | 'ONLINE' | 'LEGACY' | 'UNKNOWN';
+  receivedAccountId?: number | null;
+  receivedAccountName?: string | null;
+  depositedAmount?: number;
+  remainingAmount?: number;
+  depositStatus?: 'Undeposited' | 'Partially Deposited' | 'Fully Deposited';
   remarks?: string;
   status: 'Active' | 'Voided';
   createdAt: string;
@@ -845,6 +852,14 @@ export interface AccountsDashboardCards {
   selectedPeriod: number;
   selectedEntries: number;
   periodLabel: string;
+  todayCash: number;
+  todayOnline: number;
+  cashUndeposited: number;
+  todayDeposits: number;
+  todayExpenses: number;
+  totalBankBalance: number;
+  totalCashBalance: number;
+  totalAvailableFunds: number;
 }
 
 export interface BranchRevenueSummaryItem {
@@ -858,6 +873,8 @@ export interface BranchRevenueSummaryItem {
   yearRevenue: number;
   selectedRevenue: number;
   entriesCount: number;
+  cashRevenue?: number;
+  onlineRevenue?: number;
 }
 
 export interface AccountsReportTrendPoint {
@@ -865,6 +882,8 @@ export interface AccountsReportTrendPoint {
   date: string;
   amount: number;
   entries: number;
+  cashAmount?: number;
+  onlineAmount?: number;
 }
 
 export interface BranchComparisonItem {
@@ -887,7 +906,141 @@ export interface AccountsReportMetrics {
   activeDays: number;
   highestBranch: { name: string; amount: number } | null;
   lowestBranch: { name: string; amount: number } | null;
+  totalCashCollection?: number;
+  totalOnlineCollection?: number;
+  totalDepositedCash?: number;
+  totalUndepositedCash?: number;
+  totalExpenses?: number;
+  totalAvailableFunds?: number;
 }
+
+export interface AccountItem {
+  id: number;
+  accountNumber?: string;
+  accountName: string;
+  accountType: 'BANK' | 'DIGITAL_WALLET' | 'CASH';
+  openingBalance: number;
+  totalCredits: number;
+  totalDebits: number;
+  currentBalance: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AccountTransactionItem {
+  id: number;
+  transactionCode: string;
+  accountId: number;
+  accountName?: string;
+  accountType?: string;
+  transactionType: string;
+  transactionDate: string;
+  branchId?: number | null;
+  branchName?: string | null;
+  revenueId?: number | null;
+  revenueCode?: string | null;
+  depositId?: number | null;
+  depositCode?: string | null;
+  expenseId?: number | null;
+  expenseCode?: string | null;
+  transferId?: number | null;
+  transferCode?: string | null;
+  description: string;
+  referenceNumber?: string | null;
+  creditAmount: number;
+  debitAmount: number;
+  balanceAfter?: number;
+  createdByName?: string | null;
+  createdAt: string;
+}
+
+export interface CashDepositAllocationItem {
+  id?: number;
+  depositId?: number;
+  accountId: number;
+  accountName?: string;
+  accountType?: string;
+  amount: number;
+}
+
+export interface CashDepositItem {
+  id: number;
+  depositCode: string;
+  revenueId: number;
+  revenueCode: string;
+  branchId: number;
+  branchName: string;
+  depositDate: string;
+  totalDepositAmount: number;
+  remarks?: string;
+  createdByName?: string;
+  createdAt: string;
+  allocations: CashDepositAllocationItem[];
+}
+
+export interface CashDepositCollectionQueueItem {
+  id: number;
+  revenueCode: string;
+  revenueDate: string;
+  branchId: number;
+  branchName: string;
+  amount: number;
+  depositedAmount: number;
+  remainingAmount: number;
+  depositStatus: 'Undeposited' | 'Partially Deposited' | 'Fully Deposited';
+  remarks?: string;
+  createdByName?: string;
+}
+
+export interface AccountExpenseItem {
+  id: number;
+  expenseCode: string;
+  accountId: number;
+  accountName: string;
+  accountType: string;
+  expenseDate: string;
+  amount: number;
+  category: string;
+  paidTo: string;
+  description?: string;
+  referenceNumber?: string;
+  attachmentUrl?: string;
+  createdByName?: string;
+  createdAt: string;
+}
+
+export interface AccountTransferItem {
+  id: number;
+  transferCode: string;
+  fromAccountId: number;
+  fromAccountName: string;
+  toAccountId: number;
+  toAccountName: string;
+  transferDate: string;
+  amount: number;
+  referenceNumber?: string;
+  remarks?: string;
+  createdByName?: string;
+  createdAt: string;
+}
+
+export interface BanksSummaryCards {
+  totalBankBalance: number;
+  totalCashBalance: number;
+  totalOnlineCollection: number;
+  totalCashDeposited: number;
+  totalExpenses: number;
+  totalAvailableFunds: number;
+}
+
+export interface DepositsSummaryCards {
+  totalCashCollected: number;
+  undepositedCash: number;
+  depositedCash: number;
+  todayDeposits: number;
+}
+
 
 
 

@@ -28,6 +28,16 @@ import {
   Info,
   DollarSign,
   Ban,
+  ArrowRightLeft,
+  CreditCard,
+  ArrowUpRight,
+  ArrowDownLeft,
+  Receipt,
+  PiggyBank,
+  Eye,
+  Sliders,
+  Layers,
+  FileCheck,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -51,10 +61,16 @@ import {
   AccountsReportTrendPoint,
   BranchComparisonItem,
   AccountsReportMetrics,
+  AccountItem,
+  AccountTransactionItem,
+  CashDepositCollectionQueueItem,
+  CashDepositItem,
+  CashDepositAllocationItem,
+  AccountExpenseItem,
 } from '../types';
 
 interface AccountsProps {
-  initialTab?: 'dashboard' | 'revenue' | 'reports';
+  initialTab?: 'dashboard' | 'revenue' | 'deposits' | 'banks' | 'reports';
   onNavigate?: (path: string) => void;
 }
 
@@ -84,14 +100,16 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
   const hasRevenueView = isSuperAdmin || hasPermission('accounts.revenue.view') || hasPermission('accounts');
   const hasRevenueCreate = isSuperAdmin || hasPermission('accounts.revenue.create') || hasPermission('accounts');
   const hasRevenueEdit = isSuperAdmin || hasPermission('accounts.revenue.edit') || hasPermission('accounts');
+  const hasDepositsView = isSuperAdmin || hasPermission('accounts.deposits.view');
+  const hasBanksView = isSuperAdmin || hasPermission('accounts.banks.view');
   const hasReportsView = isSuperAdmin || hasPermission('accounts.reports.view');
   const hasExport = isSuperAdmin || hasPermission('accounts.export');
 
   const userBranchId = user?.branchId || (user as any)?.branch_id;
   const userBranchName = user?.branchName || (user as any)?.branch_name || 'My Branch';
 
-  // If user does not have super admin / dashboard access, lock to 'revenue'
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'revenue' | 'reports'>(() => {
+  // Navigation tab state
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'revenue' | 'deposits' | 'banks' | 'reports'>(() => {
     if (!isSuperAdmin) return 'revenue';
     return initialTab;
   });
@@ -104,18 +122,19 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
   }, [initialTab, isSuperAdmin]);
 
   // Handle tab switch and update URL
-  const handleTabChange = (tab: 'dashboard' | 'revenue' | 'reports') => {
+  const handleTabChange = (tab: 'dashboard' | 'revenue' | 'deposits' | 'banks' | 'reports') => {
     setActiveTab(tab);
     if (onNavigate) {
       if (tab === 'dashboard') onNavigate('accounts');
       else if (tab === 'revenue') onNavigate('accounts/revenue');
+      else if (tab === 'deposits') onNavigate('accounts/deposits');
+      else if (tab === 'banks') onNavigate('accounts/banks');
       else if (tab === 'reports') onNavigate('accounts/report');
     }
   };
 
   // Branches catalog
   const [branches, setBranches] = useState<any[]>([]);
-
   useEffect(() => {
     const fetchBranches = async () => {
       try {
@@ -131,6 +150,32 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
     };
     fetchBranches();
   }, []);
+
+  // Active Bank / Wallet / Cash Accounts
+  const [activeAccounts, setActiveAccounts] = useState<AccountItem[]>([]);
+  const fetchActiveAccounts = async () => {
+    try {
+      const res = await api.accounts.getActiveAccounts();
+      if (res.success && Array.isArray(res.accounts)) {
+        setActiveAccounts(res.accounts);
+      }
+    } catch (err) {
+      console.warn('Failed to load active bank accounts:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchActiveAccounts();
+  }, []);
+
+  // Helpers
+  const getTodayInputStr = () => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
 
   // ============================================================
   // TAB 1: DASHBOARD STATE & LOGIC
@@ -153,6 +198,14 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
     selectedPeriod: 0,
     selectedEntries: 0,
     periodLabel: 'This Month',
+    todayCash: 0,
+    todayOnline: 0,
+    cashUndeposited: 0,
+    todayDeposits: 0,
+    todayExpenses: 0,
+    totalBankBalance: 0,
+    totalCashBalance: 0,
+    totalAvailableFunds: 0,
   });
   const [dashBranchSummary, setDashBranchSummary] = useState<BranchRevenueSummaryItem[]>([]);
 
@@ -188,7 +241,6 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
     }
   }, [activeTab, dashPeriod, dashBranch, dashSortBy, dashSortOrder]);
 
-  // Filtered branch summary by search
   const filteredBranchSummary = useMemo(() => {
     if (!dashBranchSearch.trim()) return dashBranchSummary;
     const q = dashBranchSearch.toLowerCase().trim();
@@ -210,10 +262,11 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
   const [revTotalCount, setRevTotalCount] = useState(0);
   const [revTotalAmount, setRevTotalAmount] = useState(0);
 
-  // Filters
+  // Revenue Filters
   const [revSearch, setRevSearch] = useState('');
   const [revBranchFilter, setRevBranchFilter] = useState<string>(isSuperAdmin ? 'ALL' : String(userBranchId || ''));
   const [revStatusFilter, setRevStatusFilter] = useState<string>('Active');
+  const [revTypeFilter, setRevTypeFilter] = useState<string>('ALL');
   const [revStartDate, setRevStartDate] = useState<string>('');
   const [revEndDate, setRevEndDate] = useState<string>('');
   const [revSortBy, setRevSortBy] = useState<string>('revenue_date');
@@ -231,6 +284,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
         sortBy: revSortBy,
         sortOrder: revSortOrder,
       };
+      if (revTypeFilter !== 'ALL') params.collectionType = revTypeFilter;
       if (revStartDate) params.startDate = revStartDate;
       if (revEndDate) params.endDate = revEndDate;
 
@@ -252,7 +306,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
     if (activeTab === 'revenue') {
       fetchRevenues(revPage);
     }
-  }, [activeTab, revPage, revBranchFilter, revStatusFilter, revSortBy, revSortOrder]);
+  }, [activeTab, revPage, revBranchFilter, revStatusFilter, revTypeFilter, revSortBy, revSortOrder]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -264,6 +318,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
     setRevSearch('');
     if (isSuperAdmin) setRevBranchFilter('ALL');
     setRevStatusFilter('Active');
+    setRevTypeFilter('ALL');
     setRevStartDate('');
     setRevEndDate('');
     setRevPage(1);
@@ -277,7 +332,424 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
   };
 
   // ============================================================
-  // TAB 3: REPORTS STATE & LOGIC
+  // TAB 3: DEPOSITS STATE & LOGIC
+  // ============================================================
+  const [depLoading, setDepLoading] = useState(false);
+  const [depCards, setDepCards] = useState<any>({
+    totalCashCollected: 0,
+    totalUndepositedCash: 0,
+    totalDepositedCash: 0,
+    todayDeposits: 0,
+    undepositedCollectionsCount: 0,
+  });
+  const [depCollections, setDepCollections] = useState<CashDepositCollectionQueueItem[]>([]);
+  const [depPage, setDepPage] = useState(1);
+  const [depTotalPages, setDepTotalPages] = useState(1);
+  const [depTotalCount, setDepTotalCount] = useState(0);
+  const [depBranchFilter, setDepBranchFilter] = useState('ALL');
+  const [depStatusFilter, setDepStatusFilter] = useState('UNDEPOSITED_OR_PARTIAL');
+  const [depSearch, setDepSearch] = useState('');
+
+  const fetchDepositsData = async (page = depPage) => {
+    if (!hasDepositsView) return;
+    setDepLoading(true);
+    try {
+      const summaryRes = await api.accounts.getDepositsSummary({
+        branchId: depBranchFilter,
+      });
+      if (summaryRes.success) {
+        setDepCards(summaryRes.summaryCards);
+      }
+
+      const params: any = {
+        page,
+        limit: 20,
+        branchId: depBranchFilter,
+        depositStatus: depStatusFilter,
+        search: depSearch.trim(),
+      };
+      const collRes = await api.accounts.getDepositCollections(params);
+      if (collRes.success) {
+        setDepCollections(collRes.collections || []);
+        setDepTotalPages(collRes.pagination?.totalPages || 1);
+        setDepTotalCount(collRes.pagination?.total || 0);
+      }
+    } catch (err) {
+      console.error('Failed to load deposits data:', err);
+    } finally {
+      setDepLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'deposits' && hasDepositsView) {
+      fetchDepositsData(depPage);
+    }
+  }, [activeTab, depPage, depBranchFilter, depStatusFilter]);
+
+  // Deposit Allocation Modal State
+  const [showDepositModal, setShowDepositModal] = useState(false);
+  const [targetCollection, setTargetCollection] = useState<CashDepositCollectionQueueItem | null>(null);
+  const [depAllocDate, setDepAllocDate] = useState(getTodayInputStr());
+  const [depAllocRef, setDepAllocRef] = useState('');
+  const [depAllocRemarks, setDepAllocRemarks] = useState('');
+  const [allocations, setAllocations] = useState<Array<{ accountId: string; amount: string }>>([
+    { accountId: '', amount: '' },
+  ]);
+  const [depSaving, setDepSaving] = useState(false);
+  const [depError, setDepError] = useState<string | null>(null);
+
+  const openDepositModal = (coll: CashDepositCollectionQueueItem) => {
+    setTargetCollection(coll);
+    setDepAllocDate(getTodayInputStr());
+    setDepAllocRef('');
+    setDepAllocRemarks('');
+    // Default 1 allocation with remaining amount pre-filled if only 1 account
+    const firstAcc = activeAccounts.find(a => a.accountType === 'BANK') || activeAccounts[0];
+    setAllocations([
+      {
+        accountId: firstAcc ? String(firstAcc.id) : '',
+        amount: String(coll.remainingAmount),
+      },
+    ]);
+    setDepError(null);
+    setShowDepositModal(true);
+  };
+
+  const handleAddAllocationRow = () => {
+    setAllocations(prev => [...prev, { accountId: '', amount: '' }]);
+  };
+
+  const handleRemoveAllocationRow = (index: number) => {
+    if (allocations.length <= 1) return;
+    setAllocations(prev => prev.filter((_, idx) => idx !== index));
+  };
+
+  const handleAllocationChange = (index: number, field: 'accountId' | 'amount', value: string) => {
+    setAllocations(prev => {
+      const copy = [...prev];
+      copy[index] = { ...copy[index], [field]: value };
+      return copy;
+    });
+  };
+
+  const totalAllocatedAmount = useMemo(() => {
+    return allocations.reduce((sum, item) => {
+      const val = parseFloat(item.amount);
+      return sum + (isNaN(val) ? 0 : val);
+    }, 0);
+  }, [allocations]);
+
+  const handleSaveDeposit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!targetCollection) return;
+
+    if (totalAllocatedAmount <= 0) {
+      setDepError('Total deposit amount must be greater than zero.');
+      return;
+    }
+    if (totalAllocatedAmount > targetCollection.remainingAmount) {
+      setDepError(
+        `Total allocated (Rs. ${totalAllocatedAmount.toLocaleString()}) cannot exceed remaining cash (Rs. ${targetCollection.remainingAmount.toLocaleString()}).`
+      );
+      return;
+    }
+
+    // Validate account selections
+    for (let i = 0; i < allocations.length; i++) {
+      const a = allocations[i];
+      if (!a.accountId) {
+        setDepError(`Please select a bank/account for allocation #${i + 1}.`);
+        return;
+      }
+      const amt = parseFloat(a.amount);
+      if (isNaN(amt) || amt <= 0) {
+        setDepError(`Invalid amount for allocation #${i + 1}.`);
+        return;
+      }
+    }
+
+    setDepSaving(true);
+    setDepError(null);
+    try {
+      const res = await api.accounts.createDeposit({
+        revenueId: targetCollection.id,
+        depositDate: depAllocDate,
+        allocations: allocations.map(a => ({
+          accountId: parseInt(a.accountId, 10),
+          amount: parseFloat(a.amount),
+        })),
+        referenceNo: depAllocRef.trim(),
+        remarks: depAllocRemarks.trim(),
+      });
+      if (res.success) {
+        setShowDepositModal(false);
+        fetchDepositsData(depPage);
+        fetchActiveAccounts();
+        if (isSuperAdmin) fetchDashboardData();
+      } else {
+        setDepError(res.message || 'Failed to save deposit.');
+      }
+    } catch (err: any) {
+      setDepError(err.message || 'Error saving deposit.');
+    } finally {
+      setDepSaving(false);
+    }
+  };
+
+  // ============================================================
+  // TAB 4: BANKS & ACCOUNTS STATE & LOGIC
+  // ============================================================
+  const [bankLoading, setBankLoading] = useState(false);
+  const [bankCards, setBankCards] = useState<any>({
+    totalBankBalance: 0,
+    totalCashBalance: 0,
+    totalOnlineCollection: 0,
+    totalCashDeposited: 0,
+    totalExpenses: 0,
+    totalAvailableFunds: 0,
+  });
+  const [bankAccounts, setBankAccounts] = useState<AccountItem[]>([]);
+  const [selectedAccount, setSelectedAccount] = useState<AccountItem | null>(null);
+  const [accountTransactions, setAccountTransactions] = useState<AccountTransactionItem[]>([]);
+  const [accountTxLoading, setAccountTxLoading] = useState(false);
+
+  const fetchBanksData = async () => {
+    if (!hasBanksView) return;
+    setBankLoading(true);
+    try {
+      const res = await api.accounts.getBanks();
+      if (res.success) {
+        setBankCards(res.summaryCards || {});
+        setBankAccounts(res.accounts || []);
+      }
+    } catch (err) {
+      console.error('Failed to load bank accounts:', err);
+    } finally {
+      setBankLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'banks' && hasBanksView) {
+      fetchBanksData();
+    }
+  }, [activeTab]);
+
+  const handleSelectAccountForLedger = async (account: AccountItem) => {
+    setSelectedAccount(account);
+    setAccountTxLoading(true);
+    try {
+      const res = await api.accounts.getBankById(account.id, { limit: 100 });
+      if (res.success) {
+        setAccountTransactions(res.transactions || []);
+      }
+    } catch (err) {
+      console.warn('Failed to load ledger transactions:', err);
+    } finally {
+      setAccountTxLoading(false);
+    }
+  };
+
+  // Add Bank / Account Modal State
+  const [showAddBankModal, setShowAddBankModal] = useState(false);
+  const [newAccName, setNewAccName] = useState('');
+  const [newAccType, setNewAccType] = useState<'BANK' | 'DIGITAL_WALLET' | 'CASH'>('BANK');
+  const [newAccBankName, setNewAccBankName] = useState('');
+  const [newAccNumber, setNewAccNumber] = useState('');
+  const [newAccOpeningBal, setNewAccOpeningBal] = useState('0');
+  const [newAccRemarks, setNewAccRemarks] = useState('');
+  const [newAccSaving, setNewAccSaving] = useState(false);
+  const [newAccError, setNewAccError] = useState<string | null>(null);
+
+  const handleSaveNewAccount = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newAccName.trim()) {
+      setNewAccError('Account name is required.');
+      return;
+    }
+    const openBal = parseFloat(newAccOpeningBal);
+    if (isNaN(openBal) || openBal < 0) {
+      setNewAccError('Opening balance must be 0 or positive.');
+      return;
+    }
+
+    setNewAccSaving(true);
+    setNewAccError(null);
+    try {
+      const res = await api.accounts.createBank({
+        accountName: newAccName.trim(),
+        accountType: newAccType,
+        bankName: newAccBankName.trim() || undefined,
+        accountNumber: newAccNumber.trim() || undefined,
+        openingBalance: openBal,
+        remarks: newAccRemarks.trim(),
+      });
+      if (res.success) {
+        setShowAddBankModal(false);
+        fetchBanksData();
+        fetchActiveAccounts();
+      } else {
+        setNewAccError(res.message || 'Failed to create account.');
+      }
+    } catch (err: any) {
+      setNewAccError(err.message || 'Error creating account.');
+    } finally {
+      setNewAccSaving(false);
+    }
+  };
+
+  // Add Expense Modal State
+  const [showExpenseModal, setShowExpenseModal] = useState(false);
+  const [expAccountId, setExpAccountId] = useState('');
+  const [expAmount, setExpAmount] = useState('');
+  const [expCategory, setExpCategory] = useState('Office Supplies');
+  const [expPaidTo, setExpPaidTo] = useState('');
+  const [expDate, setExpDate] = useState(getTodayInputStr());
+  const [expRefNo, setExpRefNo] = useState('');
+  const [expRemarks, setExpRemarks] = useState('');
+  const [expSaving, setExpSaving] = useState(false);
+  const [expError, setExpError] = useState<string | null>(null);
+
+  const openExpenseModal = () => {
+    setExpAccountId(bankAccounts[0] ? String(bankAccounts[0].id) : '');
+    setExpAmount('');
+    setExpCategory('Office Supplies');
+    setExpPaidTo('');
+    setExpDate(getTodayInputStr());
+    setExpRefNo('');
+    setExpRemarks('');
+    setExpError(null);
+    setShowExpenseModal(true);
+  };
+
+  const handleSaveExpense = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!expAccountId) {
+      setExpError('Please select payment account.');
+      return;
+    }
+    const amt = parseFloat(expAmount);
+    if (isNaN(amt) || amt <= 0) {
+      setExpError('Amount must be greater than zero.');
+      return;
+    }
+    if (!expPaidTo.trim()) {
+      setExpError('Please specify payee / paid to.');
+      return;
+    }
+
+    setExpSaving(true);
+    setExpError(null);
+    try {
+      const res = await api.accounts.createExpense({
+        accountId: parseInt(expAccountId, 10),
+        amount: amt,
+        category: expCategory,
+        paidTo: expPaidTo.trim(),
+        expenseDate: expDate,
+        referenceNo: expRefNo.trim(),
+        remarks: expRemarks.trim(),
+      });
+      if (res.success) {
+        setShowExpenseModal(false);
+        fetchBanksData();
+        fetchActiveAccounts();
+        if (selectedAccount && selectedAccount.id === parseInt(expAccountId, 10)) {
+          handleSelectAccountForLedger(selectedAccount);
+        }
+      } else {
+        setExpError(res.message || 'Failed to record expense.');
+      }
+    } catch (err: any) {
+      setExpError(err.message || 'Error recording expense.');
+    } finally {
+      setExpSaving(false);
+    }
+  };
+
+  // Transfer Modal State
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [trFromAccId, setTrFromAccId] = useState('');
+  const [trToAccId, setTrToAccId] = useState('');
+  const [trAmount, setTrAmount] = useState('');
+  const [trDate, setTrDate] = useState(getTodayInputStr());
+  const [trRemarks, setTrRemarks] = useState('');
+  const [trSaving, setTrSaving] = useState(false);
+  const [trError, setTrError] = useState<string | null>(null);
+
+  const openTransferModal = () => {
+    setTrFromAccId(bankAccounts.length > 0 ? String(bankAccounts[0].id) : '');
+    setTrToAccId(bankAccounts.length > 1 ? String(bankAccounts[1].id) : '');
+    setTrAmount('');
+    setTrDate(getTodayInputStr());
+    setTrRemarks('');
+    setTrError(null);
+    setShowTransferModal(true);
+  };
+
+  const handleSaveTransfer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!trFromAccId || !trToAccId) {
+      setTrError('Please select source and destination accounts.');
+      return;
+    }
+    if (trFromAccId === trToAccId) {
+      setTrError('Source and destination accounts must be different.');
+      return;
+    }
+    const amt = parseFloat(trAmount);
+    if (isNaN(amt) || amt <= 0) {
+      setTrError('Transfer amount must be greater than zero.');
+      return;
+    }
+
+    setTrSaving(true);
+    setTrError(null);
+    try {
+      const res = await api.accounts.createTransfer({
+        fromAccountId: parseInt(trFromAccId, 10),
+        toAccountId: parseInt(trToAccId, 10),
+        amount: amt,
+        transferDate: trDate,
+        remarks: trRemarks.trim(),
+      });
+      if (res.success) {
+        setShowTransferModal(false);
+        fetchBanksData();
+        fetchActiveAccounts();
+      } else {
+        setTrError(res.message || 'Failed to record transfer.');
+      }
+    } catch (err: any) {
+      setTrError(err.message || 'Error executing transfer.');
+    } finally {
+      setTrSaving(false);
+    }
+  };
+
+  // Reconciliation Check Modal State
+  const [showReconModal, setShowReconModal] = useState(false);
+  const [reconData, setReconData] = useState<any>(null);
+  const [reconLoading, setReconLoading] = useState(false);
+
+  const handleCheckReconciliation = async () => {
+    setShowReconModal(true);
+    setReconLoading(true);
+    try {
+      const res = await api.accounts.getReconciliation();
+      if (res.success) {
+        setReconData(res.reconciliation);
+      }
+    } catch (err) {
+      console.warn('Reconciliation check failed:', err);
+    } finally {
+      setReconLoading(false);
+    }
+  };
+
+  // ============================================================
+  // TAB 5: REPORTS STATE & LOGIC
   // ============================================================
   const [repLoading, setRepLoading] = useState(false);
   const [repPeriod, setRepPeriod] = useState<string>('month');
@@ -340,6 +812,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
     } else {
       if (revBranchFilter && revBranchFilter !== 'ALL') params.branchId = revBranchFilter;
       if (revStatusFilter && revStatusFilter !== 'all') params.status = revStatusFilter;
+      if (revTypeFilter && revTypeFilter !== 'ALL') params.collectionType = revTypeFilter;
       if (revStartDate) params.startDate = revStartDate;
       if (revEndDate) params.endDate = revEndDate;
       if (revSearch) params.search = revSearch;
@@ -349,21 +822,14 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
   };
 
   // ============================================================
-  // MODALS STATE: Add, Edit, Void, Audit
+  // REVENUE MODALS: Add, Edit, Void, Audit
   // ============================================================
-  const getTodayInputStr = () => {
-    const d = new Date();
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${y}-${m}-${day}`;
-  };
-
-  // 1. Add Modal
   const [showAddModal, setShowAddModal] = useState(false);
   const [addBranchId, setAddBranchId] = useState<string>(isSuperAdmin ? '' : String(userBranchId || ''));
   const [addDate, setAddDate] = useState<string>(getTodayInputStr());
   const [addAmount, setAddAmount] = useState<string>('');
+  const [addCollectionType, setAddCollectionType] = useState<'CASH' | 'ONLINE'>('CASH');
+  const [addReceivedAccountId, setAddReceivedAccountId] = useState<string>('');
   const [addRemarks, setAddRemarks] = useState<string>('');
   const [addSaving, setAddSaving] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
@@ -372,6 +838,10 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
     setAddBranchId(isSuperAdmin ? (revBranchFilter !== 'ALL' ? revBranchFilter : '') : String(userBranchId || ''));
     setAddDate(getTodayInputStr());
     setAddAmount('');
+    setAddCollectionType('CASH');
+    // Pre-select first bank/wallet for online
+    const firstBank = activeAccounts.find(a => a.accountType !== 'CASH') || activeAccounts[0];
+    setAddReceivedAccountId(firstBank ? String(firstBank.id) : '');
     setAddRemarks('');
     setAddError(null);
     setShowAddModal(true);
@@ -388,6 +858,10 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
       setAddError('Please select a branch.');
       return;
     }
+    if (addCollectionType === 'ONLINE' && !addReceivedAccountId) {
+      setAddError('Please select the receiving bank/digital wallet.');
+      return;
+    }
 
     setAddSaving(true);
     setAddError(null);
@@ -395,8 +869,12 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
       const payload: any = {
         amount: parsedAmt,
         revenueDate: addDate,
+        collectionType: addCollectionType,
         remarks: addRemarks.trim(),
       };
+      if (addCollectionType === 'ONLINE') {
+        payload.receivedAccountId = parseInt(addReceivedAccountId, 10);
+      }
       if (isSuperAdmin) {
         payload.branchId = parseInt(addBranchId, 10);
       } else {
@@ -406,9 +884,9 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
       const res = await api.accounts.createRevenue(payload);
       if (res.success) {
         setShowAddModal(false);
-        // Refresh records and dashboard
         if (activeTab === 'revenue') fetchRevenues(1);
         if (isSuperAdmin) fetchDashboardData();
+        fetchActiveAccounts();
       } else {
         setAddError(res.message || 'Failed to save revenue.');
       }
@@ -419,16 +897,16 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
     }
   };
 
-  // Quick remarks suggestion chips
   const QUICK_REMARKS = [
     'Daily customer collection',
     'New connection revenue',
     'Renewal collection',
     'Counter collection',
     'Field collection',
+    'Merchant QR collection',
   ];
 
-  // 2. Edit Modal
+  // Edit Modal
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingEntry, setEditingEntry] = useState<BranchRevenue | null>(null);
   const [editDate, setEditDate] = useState<string>('');
@@ -468,6 +946,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
         setShowEditModal(false);
         fetchRevenues(revPage);
         if (isSuperAdmin) fetchDashboardData();
+        fetchActiveAccounts();
       } else {
         setEditError(res.message || 'Failed to update revenue.');
       }
@@ -478,7 +957,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
     }
   };
 
-  // 3. Void Confirmation Modal
+  // Void Confirmation Modal
   const [showVoidModal, setShowVoidModal] = useState(false);
   const [voidingEntry, setVoidingEntry] = useState<BranchRevenue | null>(null);
   const [voidReason, setVoidReason] = useState<string>('');
@@ -499,6 +978,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
         setShowVoidModal(false);
         fetchRevenues(revPage);
         if (isSuperAdmin) fetchDashboardData();
+        fetchActiveAccounts();
       } else {
         alert(res.message || 'Failed to void entry.');
       }
@@ -509,7 +989,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
     }
   };
 
-  // 4. History / Audit Modal
+  // History / Audit Modal
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [historyEntry, setHistoryEntry] = useState<any>(null);
   const [historyList, setHistoryList] = useState<any[]>([]);
@@ -543,14 +1023,14 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-xl font-black text-slate-900 tracking-tight">Accounts & Revenue</h1>
+                <h1 className="text-xl font-black text-slate-900 tracking-tight">Accounts & Ledger</h1>
                 <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
                   {isSuperAdmin ? 'Central Operations' : userBranchName}
                 </span>
               </div>
               <p className="text-xs text-slate-500 font-medium mt-0.5">
                 {isSuperAdmin
-                  ? 'Central daily revenue management, collection tracking, and analytics across all Fiberworld branches'
+                  ? 'Manage branch revenues, cash deposits, bank accounts & wallets, expenses and real-time ledger balances'
                   : `Record daily revenue collections and view branch financial history for ${userBranchName}`}
               </p>
             </div>
@@ -558,12 +1038,12 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
         </div>
 
         {/* Sub-tab pills */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {isSuperAdmin && (
             <div className="flex items-center p-1 bg-slate-100 rounded-xl border border-slate-200">
               <button
                 onClick={() => handleTabChange('dashboard')}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
                   activeTab === 'dashboard'
                     ? 'bg-white text-indigo-600 shadow-xs'
                     : 'text-slate-600 hover:text-slate-900'
@@ -574,7 +1054,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
               </button>
               <button
                 onClick={() => handleTabChange('revenue')}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
                   activeTab === 'revenue'
                     ? 'bg-white text-indigo-600 shadow-xs'
                     : 'text-slate-600 hover:text-slate-900'
@@ -584,8 +1064,33 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                 Revenue
               </button>
               <button
+                onClick={() => handleTabChange('deposits')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                  activeTab === 'deposits'
+                    ? 'bg-white text-indigo-600 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Landmark className="w-3.5 h-3.5" />
+                Deposits
+                {dashCards.cashUndeposited > 0 && (
+                  <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                )}
+              </button>
+              <button
+                onClick={() => handleTabChange('banks')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                  activeTab === 'banks'
+                    ? 'bg-white text-indigo-600 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <PiggyBank className="w-3.5 h-3.5" />
+                Banks & Ledger
+              </button>
+              <button
                 onClick={() => handleTabChange('reports')}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
                   activeTab === 'reports'
                     ? 'bg-white text-indigo-600 shadow-xs'
                     : 'text-slate-600 hover:text-slate-900'
@@ -668,7 +1173,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                   />
                   <button
                     onClick={fetchDashboardData}
-                    className="px-2.5 py-1 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-lg text-xs font-bold"
+                    className="px-2.5 py-1 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-lg text-xs font-bold cursor-pointer"
                   >
                     Apply
                   </button>
@@ -704,7 +1209,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
             </div>
           </div>
 
-          {/* 6 Summary Cards */}
+          {/* Revenue Summary Cards */}
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3.5">
             {/* 1. Today */}
             <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs relative overflow-hidden">
@@ -715,8 +1220,10 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
               <p className="text-lg font-black text-slate-900 tracking-tight">
                 Rs. {dashCards.today.toLocaleString()}
               </p>
-              <div className="w-full bg-slate-100 h-1 rounded-full mt-2 overflow-hidden">
-                <div className="bg-indigo-500 h-full w-2/3" />
+              <div className="flex items-center gap-1 text-[10px] text-slate-500 mt-1">
+                <span className="text-amber-600 font-bold">C: {dashCards.todayCash.toLocaleString()}</span>
+                <span>•</span>
+                <span className="text-indigo-600 font-bold">O: {dashCards.todayOnline.toLocaleString()}</span>
               </div>
             </div>
 
@@ -729,9 +1236,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
               <p className="text-lg font-black text-slate-900 tracking-tight">
                 Rs. {dashCards.yesterday.toLocaleString()}
               </p>
-              <div className="w-full bg-slate-100 h-1 rounded-full mt-2 overflow-hidden">
-                <div className="bg-blue-500 h-full w-1/2" />
-              </div>
+              <span className="text-[10px] text-slate-400 block mt-1">Full Day Total</span>
             </div>
 
             {/* 3. This Week */}
@@ -743,103 +1248,125 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
               <p className="text-lg font-black text-slate-900 tracking-tight">
                 Rs. {dashCards.thisWeek.toLocaleString()}
               </p>
-              <div className="w-full bg-slate-100 h-1 rounded-full mt-2 overflow-hidden">
-                <div className="bg-cyan-500 h-full w-3/4" />
-              </div>
+              <span className="text-[10px] text-slate-400 block mt-1">Sun to Current</span>
             </div>
 
             {/* 4. This Month */}
             <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs relative overflow-hidden">
               <div className="flex items-center justify-between text-slate-400 mb-1">
                 <span className="text-[11px] font-bold uppercase tracking-wider">This Month</span>
-                <BarChart3 className="w-4 h-4 text-emerald-500" />
+                <Wallet className="w-4 h-4 text-emerald-500" />
               </div>
-              <p className="text-lg font-black text-emerald-600 tracking-tight">
+              <p className="text-lg font-black text-slate-900 tracking-tight">
                 Rs. {dashCards.thisMonth.toLocaleString()}
               </p>
-              <div className="w-full bg-slate-100 h-1 rounded-full mt-2 overflow-hidden">
-                <div className="bg-emerald-500 h-full w-4/5" />
-              </div>
+              <span className="text-[10px] text-emerald-600 font-bold block mt-1">Current Month</span>
             </div>
 
             {/* 5. This Year */}
             <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs relative overflow-hidden">
               <div className="flex items-center justify-between text-slate-400 mb-1">
                 <span className="text-[11px] font-bold uppercase tracking-wider">This Year</span>
-                <DollarSign className="w-4 h-4 text-amber-500" />
+                <Building2 className="w-4 h-4 text-purple-500" />
               </div>
               <p className="text-lg font-black text-slate-900 tracking-tight">
                 Rs. {dashCards.thisYear.toLocaleString()}
               </p>
-              <div className="w-full bg-slate-100 h-1 rounded-full mt-2 overflow-hidden">
-                <div className="bg-amber-500 h-full w-full" />
-              </div>
+              <span className="text-[10px] text-slate-400 block mt-1">YTD Collections</span>
             </div>
 
-            {/* 6. Selected Period Total */}
-            <div className="bg-gradient-to-br from-indigo-900 to-slate-900 p-4 rounded-2xl text-white shadow-md relative overflow-hidden">
-              <div className="flex items-center justify-between text-indigo-300 mb-1">
-                <span className="text-[11px] font-bold uppercase tracking-wider truncate" title={dashCards.periodLabel}>
-                  {dashCards.periodLabel}
-                </span>
-                <CheckCircle2 className="w-4 h-4 text-indigo-400" />
+            {/* 6. Selected Period */}
+            <div className="bg-indigo-600 text-white p-4 rounded-2xl shadow-xs relative overflow-hidden">
+              <div className="flex items-center justify-between text-indigo-200 mb-1">
+                <span className="text-[11px] font-bold uppercase tracking-wider">{dashCards.periodLabel}</span>
+                <DollarSign className="w-4 h-4 text-indigo-200" />
               </div>
-              <p className="text-lg font-black text-white tracking-tight">
+              <p className="text-lg font-black tracking-tight">
                 Rs. {dashCards.selectedPeriod.toLocaleString()}
               </p>
-              <p className="text-[10px] text-indigo-200 font-medium mt-1">
-                {dashCards.selectedEntries} total entries recorded
-              </p>
+              <span className="text-[10px] text-indigo-200 block mt-1">
+                {dashCards.selectedEntries} Entries Recorded
+              </span>
             </div>
           </div>
 
-          {/* Quick Graphical Top 6 Branches preview */}
-          {dashBranchSummary.length > 0 && dashCards.selectedPeriod > 0 && (
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900">Branch Revenue Performance ({dashCards.periodLabel})</h3>
-                  <p className="text-xs text-slate-500">Comparative revenue contribution of top collecting branches</p>
-                </div>
-                <button
-                  onClick={() => handleTabChange('reports')}
-                  className="text-xs text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-1 cursor-pointer"
-                >
-                  Full Graphical Reports <ChevronRight className="w-3.5 h-3.5" />
-                </button>
+          {/* Ledger & Liquidity Status Bar */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
+              <div>
+                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                  Total Available Funds
+                </span>
+                <p className="text-xl font-black text-slate-900 mt-0.5">
+                  Rs. {dashCards.totalAvailableFunds.toLocaleString()}
+                </p>
+                <span className="text-[10px] text-slate-500">Bank + Available Cash</span>
               </div>
-              <div className="h-64 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={dashBranchSummary.slice(0, 10)}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                    <XAxis
-                      dataKey="branchName"
-                      tick={{ fontSize: 11, fill: '#64748b' }}
-                      tickFormatter={val => (val.length > 12 ? val.substring(0, 10) + '...' : val)}
-                    />
-                    <YAxis
-                      tick={{ fontSize: 11, fill: '#64748b' }}
-                      tickFormatter={val => (val >= 1000 ? `${(val / 1000).toFixed(0)}k` : val)}
-                    />
-                    <Tooltip
-                      formatter={(val: any) => [`Rs. ${Number(val).toLocaleString()}`, 'Revenue']}
-                      labelFormatter={label => `Branch: ${label}`}
-                      contentStyle={{ borderRadius: '12px', fontSize: '12px', borderColor: '#e2e8f0' }}
-                    />
-                    <Bar dataKey="selectedRevenue" name="Revenue" fill="#4f46e5" radius={[6, 6, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
+              <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+                <CheckCircle2 className="w-5 h-5" />
               </div>
             </div>
-          )}
 
-          {/* Branch-Wise Revenue Summary Table */}
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
+              <div>
+                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                  Total Bank Balance
+                </span>
+                <p className="text-xl font-black text-indigo-600 mt-0.5">
+                  Rs. {dashCards.totalBankBalance.toLocaleString()}
+                </p>
+                <span className="text-[10px] text-slate-500">Across all banks & digital wallets</span>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+                <Landmark className="w-5 h-5" />
+              </div>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
+              <div>
+                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                  Undeposited Cash
+                </span>
+                <p className="text-xl font-black text-amber-600 mt-0.5">
+                  Rs. {dashCards.cashUndeposited.toLocaleString()}
+                </p>
+                <button
+                  onClick={() => handleTabChange('deposits')}
+                  className="text-[10px] text-indigo-600 font-bold hover:underline cursor-pointer"
+                >
+                  Deposit into Banks →
+                </button>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
+                <AlertCircle className="w-5 h-5" />
+              </div>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
+              <div>
+                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                  Today's Deposits & Expenses
+                </span>
+                <p className="text-sm font-bold text-slate-800 mt-1">
+                  Deposited: <strong className="text-emerald-700">Rs. {dashCards.todayDeposits.toLocaleString()}</strong>
+                </p>
+                <p className="text-[11px] text-slate-500">
+                  Expenses: <strong className="text-rose-600">Rs. {dashCards.todayExpenses.toLocaleString()}</strong>
+                </p>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold">
+                <ArrowRightLeft className="w-5 h-5" />
+              </div>
+            </div>
+          </div>
+
+          {/* Branch-Wise Summary Table */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-            <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="p-4 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-3">
               <div>
                 <h3 className="text-sm font-black text-slate-900">Branch-Wise Revenue Summary</h3>
                 <p className="text-xs text-slate-500 font-medium">
-                  Financial intake summary across all physical branch locations
+                  Real-time collection performance across Fiberworld network
                 </p>
               </div>
 
@@ -851,29 +1378,35 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                     placeholder="Search branch..."
                     value={dashBranchSearch}
                     onChange={e => setDashBranchSearch(e.target.value)}
-                    className="text-xs border border-slate-200 rounded-xl pl-8 pr-3 py-1.5 w-48 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 transition-all"
+                    className="text-xs border border-slate-300 rounded-xl pl-8 pr-3 py-1.5 w-44 bg-white"
                   />
                 </div>
 
-                <select
-                  value={dashSortBy}
-                  onChange={e => setDashSortBy(e.target.value)}
-                  className="text-xs border border-slate-200 rounded-xl px-2.5 py-1.5 bg-slate-50 font-medium cursor-pointer"
-                >
-                  <option value="revenue">Sort: Selected Period</option>
-                  <option value="today">Sort: Today</option>
-                  <option value="month">Sort: This Month</option>
-                  <option value="year">Sort: This Year</option>
-                  <option value="name">Sort: Branch Name</option>
-                </select>
-
-                <button
-                  onClick={() => setDashSortOrder(prev => (prev === 'asc' ? 'desc' : 'asc'))}
-                  className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600"
-                  title={`Order: ${dashSortOrder.toUpperCase()}`}
-                >
-                  <ArrowUpDown className="w-3.5 h-3.5" />
-                </button>
+                <div className="flex items-center gap-1 border border-slate-200 rounded-xl p-0.5 bg-slate-50">
+                  <button
+                    onClick={() => setDashSortBy('revenue')}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer ${
+                      dashSortBy === 'revenue' ? 'bg-white shadow-2xs text-indigo-600' : 'text-slate-500'
+                    }`}
+                  >
+                    Revenue
+                  </button>
+                  <button
+                    onClick={() => setDashSortBy('name')}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer ${
+                      dashSortBy === 'name' ? 'bg-white shadow-2xs text-indigo-600' : 'text-slate-500'
+                    }`}
+                  >
+                    Name
+                  </button>
+                  <button
+                    onClick={() => setDashSortOrder(dashSortOrder === 'desc' ? 'asc' : 'desc')}
+                    className="p-1 text-slate-500 hover:text-slate-800 cursor-pointer"
+                    title="Toggle Sort Order"
+                  >
+                    <ArrowUpDown className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -881,23 +1414,22 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
               <table className="w-full text-left text-xs text-slate-600">
                 <thead className="bg-slate-50/80 text-[11px] font-bold uppercase tracking-wider text-slate-500 border-b border-slate-100">
                   <tr>
-                    <th className="py-3 px-4">Branch</th>
-                    <th className="py-3 px-4 text-right">Today</th>
+                    <th className="py-3 px-4">Branch Name</th>
+                    <th className="py-3 px-4 text-right">Today's Revenue</th>
                     <th className="py-3 px-4 text-right">Yesterday</th>
                     <th className="py-3 px-4 text-right">This Month</th>
                     <th className="py-3 px-4 text-right">This Year</th>
-                    <th className="py-3 px-4 text-right bg-indigo-50/50 text-indigo-900">
+                    <th className="py-3 px-4 text-right">
                       {dashCards.periodLabel}
                     </th>
-                    <th className="py-3 px-4 text-center">Entries</th>
-                    <th className="py-3 px-4 text-right">Action</th>
+                    <th className="py-3 px-4 text-center">Action</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-slate-100 font-medium">
                   {filteredBranchSummary.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="py-12 text-center text-slate-400">
-                        No branches match the specified criteria.
+                      <td colSpan={7} className="py-8 text-center text-slate-400">
+                        No branch records found.
                       </td>
                     </tr>
                   ) : (
@@ -905,37 +1437,32 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                       <tr key={row.branchId} className="hover:bg-slate-50/60 transition-colors">
                         <td className="py-3 px-4 font-bold text-slate-900">
                           <div className="flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                            <Building2 className="w-3.5 h-3.5 text-slate-400" />
                             <span>{row.branchName}</span>
                             {row.branchCode && (
-                              <span className="text-[10px] font-mono text-slate-400">({row.branchCode})</span>
+                              <span className="text-[10px] text-slate-400 font-mono">({row.branchCode})</span>
                             )}
                           </div>
                         </td>
-                        <td className="py-3 px-4 text-right font-semibold text-slate-800">
-                          {row.todayRevenue > 0 ? `Rs. ${row.todayRevenue.toLocaleString()}` : '—'}
+                        <td className="py-3 px-4 text-right font-black text-slate-900">
+                          Rs. {row.todayRevenue.toLocaleString()}
                         </td>
                         <td className="py-3 px-4 text-right text-slate-600">
-                          {row.yesterdayRevenue > 0 ? `Rs. ${row.yesterdayRevenue.toLocaleString()}` : '—'}
+                          Rs. {row.yesterdayRevenue.toLocaleString()}
                         </td>
-                        <td className="py-3 px-4 text-right font-medium text-slate-700">
-                          {row.monthRevenue > 0 ? `Rs. ${row.monthRevenue.toLocaleString()}` : '—'}
+                        <td className="py-3 px-4 text-right font-bold text-indigo-600">
+                          Rs. {row.monthRevenue.toLocaleString()}
                         </td>
-                        <td className="py-3 px-4 text-right text-slate-700">
-                          {row.yearRevenue > 0 ? `Rs. ${row.yearRevenue.toLocaleString()}` : '—'}
+                        <td className="py-3 px-4 text-right text-slate-800">
+                          Rs. {row.yearRevenue.toLocaleString()}
                         </td>
-                        <td className="py-3 px-4 text-right font-black text-indigo-600 bg-indigo-50/30">
-                          {row.selectedRevenue > 0 ? `Rs. ${row.selectedRevenue.toLocaleString()}` : 'Rs. 0'}
+                        <td className="py-3 px-4 text-right font-black text-emerald-700 bg-emerald-50/30">
+                          Rs. {row.selectedRevenue.toLocaleString()}
                         </td>
-                        <td className="py-3 px-4 text-center font-medium">
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">
-                            {row.entriesCount}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-right">
+                        <td className="py-3 px-4 text-center">
                           <button
                             onClick={() => handleJumpToBranchRevenue(row.branchId)}
-                            className="px-2.5 py-1 text-[11px] font-bold text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
+                            className="px-2.5 py-1 text-[11px] font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg cursor-pointer transition-colors"
                           >
                             View Entries →
                           </button>
@@ -951,67 +1478,35 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
       )}
 
       {/* ============================================================ */}
-      {/* VIEW 2: REVENUE ENTRY MANAGEMENT */}
+      {/* VIEW 2: REVENUE TAB */}
       {/* ============================================================ */}
       {activeTab === 'revenue' && (
-        <div className="space-y-6">
-          {/* Branch Restricted Banner (for branch users) */}
-          {!isSuperAdmin && (
-            <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-bold">
-                  <Building2 className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-xs font-bold text-indigo-900">Branch Revenue Registry: {userBranchName}</h3>
-                  <p className="text-[11px] text-indigo-700">
-                    Your account is authorized to view and submit daily collection figures for {userBranchName}.
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={openAddModal}
-                className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                Record Daily Revenue
-              </button>
-            </div>
-          )}
-
+        <div className="space-y-4">
           {/* Revenue Filters Bar */}
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-              {/* Search Form */}
-              <form onSubmit={handleSearchSubmit} className="flex-1 flex items-center gap-2 max-w-md">
-                <div className="relative flex-1">
-                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    placeholder="Search by remarks, staff name, or branch..."
-                    value={revSearch}
-                    onChange={e => setRevSearch(e.target.value)}
-                    className="w-full text-xs border border-slate-300 rounded-xl pl-9 pr-3 py-2 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 transition-all"
-                  />
-                </div>
-                <button
-                  type="submit"
-                  className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl cursor-pointer"
-                >
-                  Search
-                </button>
-              </form>
+            <form onSubmit={handleSearchSubmit} className="flex flex-col md:flex-row md:items-center gap-2.5">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Search remarks, entry code, staff name..."
+                  value={revSearch}
+                  onChange={e => setRevSearch(e.target.value)}
+                  className="w-full text-xs border border-slate-300 rounded-xl pl-9 pr-3 py-2 bg-white focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
 
-              {/* Branch & Status Selectors */}
-              <div className="flex flex-wrap items-center gap-2">
-                {isSuperAdmin && (
+              {/* Branch Filter */}
+              {isSuperAdmin && (
+                <div className="flex items-center gap-1.5">
+                  <Building2 className="w-4 h-4 text-slate-400" />
                   <select
                     value={revBranchFilter}
                     onChange={e => {
                       setRevBranchFilter(e.target.value);
                       setRevPage(1);
                     }}
-                    className="text-xs border border-slate-300 rounded-xl px-3 py-2 bg-white font-medium cursor-pointer"
+                    className="text-xs border border-slate-300 rounded-xl px-3 py-2 bg-white font-medium"
                   >
                     <option value="ALL">All Branches</option>
                     {branches.map(b => (
@@ -1020,82 +1515,87 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                       </option>
                     ))}
                   </select>
-                )}
+                </div>
+              )}
 
+              {/* Collection Type Filter */}
+              <div className="flex items-center gap-1.5">
                 <select
-                  value={revStatusFilter}
+                  value={revTypeFilter}
                   onChange={e => {
-                    setRevStatusFilter(e.target.value);
+                    setRevTypeFilter(e.target.value);
                     setRevPage(1);
                   }}
-                  className="text-xs border border-slate-300 rounded-xl px-3 py-2 bg-white font-medium cursor-pointer"
+                  className="text-xs border border-slate-300 rounded-xl px-3 py-2 bg-white font-medium"
                 >
-                  <option value="Active">Active Only</option>
-                  <option value="all">All Entries</option>
-                  <option value="Voided">Voided Entries</option>
+                  <option value="ALL">All Types (Cash & Online)</option>
+                  <option value="CASH">Cash Only</option>
+                  <option value="ONLINE">Online Only</option>
                 </select>
+              </div>
 
-                <div className="flex items-center gap-1">
-                  <input
-                    type="date"
-                    value={revStartDate}
-                    onChange={e => {
-                      setRevStartDate(e.target.value);
-                      setRevPage(1);
-                    }}
-                    className="text-xs border border-slate-300 rounded-xl px-2 py-1.5 bg-white"
-                    placeholder="From Date"
-                    title="Start Date"
-                  />
-                  <span className="text-xs text-slate-400">-</span>
-                  <input
-                    type="date"
-                    value={revEndDate}
-                    onChange={e => {
-                      setRevEndDate(e.target.value);
-                      setRevPage(1);
-                    }}
-                    className="text-xs border border-slate-300 rounded-xl px-2 py-1.5 bg-white"
-                    placeholder="To Date"
-                    title="End Date"
-                  />
-                </div>
+              {/* Status Filter */}
+              <select
+                value={revStatusFilter}
+                onChange={e => {
+                  setRevStatusFilter(e.target.value);
+                  setRevPage(1);
+                }}
+                className="text-xs border border-slate-300 rounded-xl px-3 py-2 bg-white font-medium"
+              >
+                <option value="Active">Active Only</option>
+                <option value="Voided">Voided Entries</option>
+                <option value="all">All Statuses</option>
+              </select>
 
+              {/* Date Filters */}
+              <div className="flex items-center gap-1">
+                <input
+                  type="date"
+                  value={revStartDate}
+                  onChange={e => setRevStartDate(e.target.value)}
+                  className="text-xs border border-slate-300 rounded-xl px-2 py-2 bg-white"
+                  title="From Date"
+                />
+                <span className="text-xs text-slate-400">-</span>
+                <input
+                  type="date"
+                  value={revEndDate}
+                  onChange={e => setRevEndDate(e.target.value)}
+                  className="text-xs border border-slate-300 rounded-xl px-2 py-2 bg-white"
+                  title="To Date"
+                />
+              </div>
+
+              <div className="flex items-center gap-1">
                 <button
+                  type="submit"
+                  className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer"
+                >
+                  Filter
+                </button>
+                <button
+                  type="button"
                   onClick={handleClearFilters}
-                  className="px-2.5 py-2 text-xs font-bold text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl cursor-pointer"
-                  title="Reset Filters"
+                  className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs rounded-xl cursor-pointer"
                 >
                   Reset
                 </button>
+              </div>
+            </form>
 
-                <button
-                  onClick={() => fetchRevenues(revPage)}
-                  disabled={revLoading}
-                  className="p-2 border border-slate-200 rounded-xl text-slate-500 hover:bg-slate-50 cursor-pointer"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${revLoading ? 'animate-spin' : ''}`} />
-                </button>
-              </div>
-            </div>
-
-            {/* Filtered stats chip summary */}
-            <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between text-xs text-slate-500">
-              <div className="flex items-center gap-4">
-                <span>
-                  Showing <strong className="text-slate-900">{revenues.length}</strong> of{' '}
-                  <strong className="text-slate-900">{revTotalCount}</strong> entries
-                </span>
-                <span>
-                  Filtered Collection Total:{' '}
-                  <strong className="text-emerald-600 font-bold">
-                    Rs. {revTotalAmount.toLocaleString()}
-                  </strong>
-                </span>
-              </div>
-              <div>
-                <span>Displaying in NPR (Rs.) • Asia/Kathmandu Time</span>
-              </div>
+            <div className="flex items-center justify-between text-xs text-slate-500 pt-1">
+              <span>
+                Found <strong>{revTotalCount}</strong> entries • Total Filtered Amount:{' '}
+                <strong className="text-emerald-700 font-black">Rs. {revTotalAmount.toLocaleString()}</strong>
+              </span>
+              <button
+                onClick={() => fetchRevenues(revPage)}
+                className="text-indigo-600 hover:underline flex items-center gap-1 font-bold cursor-pointer"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${revLoading ? 'animate-spin' : ''}`} />
+                Refresh
+              </button>
             </div>
           </div>
 
@@ -1105,45 +1605,37 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
               <table className="w-full text-left text-xs text-slate-600">
                 <thead className="bg-slate-50/80 text-[11px] font-bold uppercase tracking-wider text-slate-500 border-b border-slate-100">
                   <tr>
-                    <th className="py-3 px-4">Date</th>
-                    <th className="py-3 px-4">Branch</th>
-                    <th className="py-3 px-4 text-right">Revenue Amount</th>
-                    <th className="py-3 px-4">Remarks</th>
-                    <th className="py-3 px-4">Entered By</th>
-                    <th className="py-3 px-4">Created Time</th>
-                    <th className="py-3 px-4">Last Updated</th>
-                    <th className="py-3 px-4 text-center">Status</th>
-                    <th className="py-3 px-4 text-right">Action</th>
+                    <th className="py-3.5 px-4">Date</th>
+                    <th className="py-3.5 px-4">Branch</th>
+                    <th className="py-3.5 px-4">Collection Type & Account</th>
+                    <th className="py-3.5 px-4 text-right">Revenue Amount</th>
+                    <th className="py-3.5 px-4 text-center">Deposit Status</th>
+                    <th className="py-3.5 px-4">Remarks</th>
+                    <th className="py-3.5 px-4">Entered By</th>
+                    <th className="py-3.5 px-4 text-center">Status</th>
+                    <th className="py-3.5 px-4 text-right">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {revenues.length === 0 ? (
+                  {revLoading ? (
                     <tr>
-                      <td colSpan={9} className="py-14 text-center text-slate-400">
-                        {revLoading ? (
-                          <div className="flex flex-col items-center justify-center gap-2">
-                            <RefreshCw className="w-5 h-5 text-indigo-500 animate-spin" />
-                            <span>Loading revenue entries...</span>
-                          </div>
-                        ) : (
-                          <div className="flex flex-col items-center justify-center gap-2">
-                            <Wallet className="w-8 h-8 text-slate-300" />
-                            <span className="font-medium text-slate-600">No revenue entries recorded yet.</span>
-                            {hasRevenueCreate && (
-                              <button
-                                onClick={openAddModal}
-                                className="mt-2 px-3.5 py-1.5 bg-indigo-600 text-white rounded-xl font-bold text-xs cursor-pointer hover:bg-indigo-700"
-                              >
-                                + Record First Revenue Entry
-                              </button>
-                            )}
-                          </div>
-                        )}
+                      <td colSpan={9} className="py-12 text-center text-slate-400">
+                        <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-indigo-500" />
+                        Loading revenue entries...
+                      </td>
+                    </tr>
+                  ) : revenues.length === 0 ? (
+                    <tr>
+                      <td colSpan={9} className="py-12 text-center text-slate-400">
+                        No revenue entries found matching current filters.
                       </td>
                     </tr>
                   ) : (
                     revenues.map(entry => {
                       const isVoided = entry.status === 'Voided';
+                      const isCash = entry.collectionType === 'CASH';
+                      const isOnline = entry.collectionType === 'ONLINE';
+
                       return (
                         <tr
                           key={entry.id}
@@ -1156,12 +1648,36 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                               <Calendar className="w-3.5 h-3.5 text-slate-400" />
                               <span>{entry.revenueDate}</span>
                             </div>
+                            {entry.revenueCode && (
+                              <span className="text-[10px] text-slate-400 font-mono block">
+                                {entry.revenueCode}
+                              </span>
+                            )}
                           </td>
                           <td className="py-3.5 px-4 font-semibold text-slate-800">
                             <div className="flex items-center gap-1.5">
                               <Building2 className="w-3.5 h-3.5 text-slate-400" />
                               <span>{entry.branchName}</span>
                             </div>
+                          </td>
+                          <td className="py-3.5 px-4 whitespace-nowrap">
+                            {isCash ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                                💵 Cash Collection
+                              </span>
+                            ) : isOnline ? (
+                              <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-800 border border-indigo-200">
+                                <CreditCard className="w-3 h-3 text-indigo-600" />
+                                <span>Online</span>
+                                {entry.receivedAccountName && (
+                                  <span className="font-extrabold text-indigo-900">
+                                    • {entry.receivedAccountName}
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-slate-400 text-[10px]">Legacy</span>
+                            )}
                           </td>
                           <td className="py-3.5 px-4 text-right whitespace-nowrap">
                             <span
@@ -1172,24 +1688,32 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                               Rs. {entry.amount.toLocaleString()}
                             </span>
                           </td>
+                          <td className="py-3.5 px-4 text-center whitespace-nowrap">
+                            {isVoided ? (
+                              <span className="text-slate-400 text-[10px]">Voided</span>
+                            ) : isOnline ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                Auto-Credited
+                              </span>
+                            ) : entry.depositStatus === 'Fully Deposited' ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                Fully Deposited
+                              </span>
+                            ) : entry.depositStatus === 'Partially Deposited' ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200" title={`Deposited: Rs. ${entry.depositedAmount?.toLocaleString()} | Rem: Rs. ${entry.remainingAmount?.toLocaleString()}`}>
+                                Partially Deposited
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 animate-pulse">
+                                Undeposited Cash
+                              </span>
+                            )}
+                          </td>
                           <td className="py-3.5 px-4 max-w-xs truncate text-slate-600" title={entry.remarks}>
                             {entry.remarks || <span className="text-slate-300">—</span>}
                           </td>
                           <td className="py-3.5 px-4 whitespace-nowrap font-medium text-slate-700">
                             {entry.createdByName || 'Staff'}
-                          </td>
-                          <td className="py-3.5 px-4 whitespace-nowrap text-slate-400 text-[11px]">
-                            {entry.createdAt ? new Date(entry.createdAt).toLocaleDateString() : '—'}
-                          </td>
-                          <td className="py-3.5 px-4 whitespace-nowrap text-[11px] text-slate-500">
-                            {entry.updatedByName ? (
-                              <span title={`Updated by ${entry.updatedByName}`}>
-                                {entry.updatedByName} (
-                                {entry.updatedAt ? new Date(entry.updatedAt).toLocaleDateString() : ''})
-                              </span>
-                            ) : (
-                              <span className="text-slate-300">—</span>
-                            )}
                           </td>
                           <td className="py-3.5 px-4 text-center whitespace-nowrap">
                             {isVoided ? (
@@ -1207,7 +1731,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                               {/* Audit trail button */}
                               <button
                                 onClick={() => openHistoryModal(entry)}
-                                className="p-1 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-slate-100 transition-colors"
+                                className="p-1 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-slate-100 transition-colors cursor-pointer"
                                 title="View Audit History"
                               >
                                 <History className="w-3.5 h-3.5" />
@@ -1217,7 +1741,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                               {hasRevenueEdit && !isVoided && (
                                 <button
                                   onClick={() => openEditModal(entry)}
-                                  className="p-1 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-slate-100 transition-colors"
+                                  className="p-1 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-slate-100 transition-colors cursor-pointer"
                                   title="Edit Entry"
                                 >
                                   <Edit2 className="w-3.5 h-3.5" />
@@ -1228,7 +1752,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                               {isSuperAdmin && !isVoided && (
                                 <button
                                   onClick={() => openVoidModal(entry)}
-                                  className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                                  className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
                                   title="Void Revenue Entry"
                                 >
                                   <Ban className="w-3.5 h-3.5" />
@@ -1254,14 +1778,14 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                   <button
                     disabled={revPage <= 1}
                     onClick={() => setRevPage(p => Math.max(1, p - 1))}
-                    className="px-3 py-1 border border-slate-200 rounded-lg disabled:opacity-40 hover:bg-slate-50"
+                    className="px-2.5 py-1 rounded border border-slate-200 hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
                   >
                     Previous
                   </button>
                   <button
                     disabled={revPage >= revTotalPages}
                     onClick={() => setRevPage(p => Math.min(revTotalPages, p + 1))}
-                    className="px-3 py-1 border border-slate-200 rounded-lg disabled:opacity-40 hover:bg-slate-50"
+                    className="px-2.5 py-1 rounded border border-slate-200 hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
                   >
                     Next
                   </button>
@@ -1273,7 +1797,555 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
       )}
 
       {/* ============================================================ */}
-      {/* VIEW 3: GRAPHICAL REPORTS & ANALYTICS */}
+      {/* VIEW 3: DEPOSITS TAB (Super Admin) */}
+      {/* ============================================================ */}
+      {activeTab === 'deposits' && hasDepositsView && (
+        <div className="space-y-6">
+          {/* Summary Cards */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                Total Cash Collected
+              </span>
+              <p className="text-xl font-black text-slate-900 mt-1">
+                Rs. {depCards.totalCashCollected.toLocaleString()}
+              </p>
+              <span className="text-[10px] text-slate-500">All cash revenues to date</span>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-amber-200 bg-amber-50/20 shadow-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-amber-700 uppercase tracking-wider">
+                  Undeposited Cash
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
+                  {depCards.undepositedCollectionsCount} Pending
+                </span>
+              </div>
+              <p className="text-xl font-black text-amber-600 mt-1">
+                Rs. {depCards.totalUndepositedCash.toLocaleString()}
+              </p>
+              <span className="text-[10px] text-amber-700">Available cash awaiting bank deposit</span>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                Deposited Cash
+              </span>
+              <p className="text-xl font-black text-emerald-700 mt-1">
+                Rs. {depCards.totalDepositedCash.toLocaleString()}
+              </p>
+              <span className="text-[10px] text-slate-500">Successfully deposited into banks</span>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                Total Deposits Today
+              </span>
+              <p className="text-xl font-black text-indigo-600 mt-1">
+                Rs. {depCards.todayDeposits.toLocaleString()}
+              </p>
+              <span className="text-[10px] text-slate-500">Bank deposits processed today</span>
+            </div>
+          </div>
+
+          {/* Queue Filter Bar */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Search branch or code..."
+                  value={depSearch}
+                  onChange={e => setDepSearch(e.target.value)}
+                  className="text-xs border border-slate-300 rounded-xl pl-8 pr-3 py-1.5 w-48 bg-white"
+                />
+              </div>
+
+              <select
+                value={depBranchFilter}
+                onChange={e => {
+                  setDepBranchFilter(e.target.value);
+                  setDepPage(1);
+                }}
+                className="text-xs border border-slate-300 rounded-xl px-3 py-1.5 bg-white font-medium"
+              >
+                <option value="ALL">All Branches</option>
+                {branches.map(b => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={depStatusFilter}
+                onChange={e => {
+                  setDepStatusFilter(e.target.value);
+                  setDepPage(1);
+                }}
+                className="text-xs border border-slate-300 rounded-xl px-3 py-1.5 bg-white font-medium"
+              >
+                <option value="UNDEPOSITED_OR_PARTIAL">Pending (Undeposited & Partial)</option>
+                <option value="Undeposited">Undeposited Only</option>
+                <option value="Partially Deposited">Partially Deposited Only</option>
+                <option value="Fully Deposited">Fully Deposited Only</option>
+                <option value="ALL">All Collections</option>
+              </select>
+            </div>
+
+            <button
+              onClick={() => fetchDepositsData(depPage)}
+              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${depLoading ? 'animate-spin' : ''}`} />
+              Refresh Queue
+            </button>
+          </div>
+
+          {/* Collections Queue Table */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+            <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-black text-slate-900">Cash Collections Pending Deposit</h3>
+                <p className="text-xs text-slate-500 font-medium">
+                  Process full deposits or split cash collections across multiple bank accounts
+                </p>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs text-slate-600">
+                <thead className="bg-slate-50/80 text-[11px] font-bold uppercase tracking-wider text-slate-500 border-b border-slate-100">
+                  <tr>
+                    <th className="py-3 px-4">Collection ID</th>
+                    <th className="py-3 px-4">Date</th>
+                    <th className="py-3 px-4">Branch</th>
+                    <th className="py-3 px-4 text-right">Collection Amount</th>
+                    <th className="py-3 px-4 text-right">Deposited</th>
+                    <th className="py-3 px-4 text-right">Remaining Amount</th>
+                    <th className="py-3 px-4 text-center">Status</th>
+                    <th className="py-3 px-4 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {depLoading ? (
+                    <tr>
+                      <td colSpan={8} className="py-12 text-center text-slate-400">
+                        <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-indigo-500" />
+                        Loading deposit queue...
+                      </td>
+                    </tr>
+                  ) : depCollections.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="py-12 text-center text-slate-400">
+                        No cash collections pending deposit matching your filters.
+                      </td>
+                    </tr>
+                  ) : (
+                    depCollections.map(coll => {
+                      const isFullyDep = coll.depositStatus === 'Fully Deposited';
+                      return (
+                        <tr key={coll.id} className="hover:bg-slate-50/60 transition-colors">
+                          <td className="py-3.5 px-4 font-mono font-bold text-slate-900">
+                            {coll.revenueCode || `#${coll.id}`}
+                          </td>
+                          <td className="py-3.5 px-4 whitespace-nowrap">
+                            <div className="flex items-center gap-1.5 font-medium text-slate-800">
+                              <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                              <span>{coll.revenueDate}</span>
+                            </div>
+                          </td>
+                          <td className="py-3.5 px-4 font-bold text-slate-900">
+                            <div className="flex items-center gap-1.5">
+                              <Building2 className="w-3.5 h-3.5 text-slate-400" />
+                              <span>{coll.branchName}</span>
+                            </div>
+                          </td>
+                          <td className="py-3.5 px-4 text-right font-black text-slate-900">
+                            Rs. {coll.amount.toLocaleString()}
+                          </td>
+                          <td className="py-3.5 px-4 text-right font-bold text-emerald-700">
+                            Rs. {coll.depositedAmount.toLocaleString()}
+                          </td>
+                          <td className="py-3.5 px-4 text-right font-black text-amber-600 bg-amber-50/20">
+                            Rs. {coll.remainingAmount.toLocaleString()}
+                          </td>
+                          <td className="py-3.5 px-4 text-center">
+                            {isFullyDep ? (
+                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                Fully Deposited
+                              </span>
+                            ) : coll.depositStatus === 'Partially Deposited' ? (
+                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                                Partially Deposited
+                              </span>
+                            ) : (
+                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                                Undeposited
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3.5 px-4 text-right">
+                            {!isFullyDep ? (
+                              <button
+                                onClick={() => openDepositModal(coll)}
+                                className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer flex items-center gap-1 ml-auto"
+                              >
+                                <Landmark className="w-3.5 h-3.5" />
+                                DEPOSIT
+                              </button>
+                            ) : (
+                              <span className="text-slate-400 text-xs font-medium">Completed</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination */}
+            {depTotalPages > 1 && (
+              <div className="p-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+                <span>
+                  Page {depPage} of {depTotalPages} ({depTotalCount} items)
+                </span>
+                <div className="flex items-center gap-1">
+                  <button
+                    disabled={depPage <= 1}
+                    onClick={() => setDepPage(p => Math.max(1, p - 1))}
+                    className="px-2.5 py-1 rounded border border-slate-200 hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    disabled={depPage >= depTotalPages}
+                    onClick={() => setDepPage(p => Math.min(depTotalPages, p + 1))}
+                    className="px-2.5 py-1 rounded border border-slate-200 hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* VIEW 4: BANKS & LEDGER TAB (Super Admin) */}
+      {/* ============================================================ */}
+      {activeTab === 'banks' && hasBanksView && (
+        <div className="space-y-6">
+          {/* Action Header */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-base font-black text-slate-900">Bank & Cash Accounts</h2>
+              <p className="text-xs text-slate-500 font-medium">
+                Live balances calculated strictly from the financial ledger credits and debits
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={openExpenseModal}
+                className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs rounded-xl border border-rose-200 flex items-center gap-1.5 cursor-pointer transition-colors"
+              >
+                <Receipt className="w-3.5 h-3.5 text-rose-600" />
+                + Add Expense / Payment
+              </button>
+              <button
+                onClick={openTransferModal}
+                className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-xl border border-indigo-200 flex items-center gap-1.5 cursor-pointer transition-colors"
+              >
+                <ArrowRightLeft className="w-3.5 h-3.5 text-indigo-600" />
+                + Transfer Funds
+              </button>
+              <button
+                onClick={() => {
+                  setNewAccName('');
+                  setNewAccType('BANK');
+                  setNewAccBankName('');
+                  setNewAccNumber('');
+                  setNewAccOpeningBal('0');
+                  setNewAccRemarks('');
+                  setNewAccError(null);
+                  setShowAddBankModal(true);
+                }}
+                className="px-3.5 py-2 bg-slate-900 hover:bg-black text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-1.5 cursor-pointer transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                + Add Bank / Account
+              </button>
+              <button
+                onClick={handleCheckReconciliation}
+                className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl border border-slate-200 flex items-center gap-1.5 cursor-pointer"
+                title="Verify transaction ledger integrity"
+              >
+                <FileCheck className="w-3.5 h-3.5 text-slate-600" />
+                Reconcile
+              </button>
+            </div>
+          </div>
+
+          {/* 6 Summary Cards */}
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3.5">
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                Total Available Funds
+              </span>
+              <p className="text-lg font-black text-slate-900 mt-1">
+                Rs. {bankCards.totalAvailableFunds.toLocaleString()}
+              </p>
+              <span className="text-[10px] text-emerald-600 font-bold">Total Liquid Balance</span>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                Bank Balance
+              </span>
+              <p className="text-lg font-black text-indigo-600 mt-1">
+                Rs. {bankCards.totalBankBalance.toLocaleString()}
+              </p>
+              <span className="text-[10px] text-slate-500">Commercial Banks & Wallets</span>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                Cash Balance
+              </span>
+              <p className="text-lg font-black text-amber-600 mt-1">
+                Rs. {bankCards.totalCashBalance.toLocaleString()}
+              </p>
+              <span className="text-[10px] text-slate-500">Undeposited Collection</span>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                Online Collection
+              </span>
+              <p className="text-lg font-black text-cyan-600 mt-1">
+                Rs. {bankCards.totalOnlineCollection.toLocaleString()}
+              </p>
+              <span className="text-[10px] text-slate-500">Credited Directly</span>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                Cash Deposited
+              </span>
+              <p className="text-lg font-black text-emerald-700 mt-1">
+                Rs. {bankCards.totalCashDeposited.toLocaleString()}
+              </p>
+              <span className="text-[10px] text-slate-500">Transferred Cash → Bank</span>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                Total Expenses
+              </span>
+              <p className="text-lg font-black text-rose-600 mt-1">
+                Rs. {bankCards.totalExpenses.toLocaleString()}
+              </p>
+              <span className="text-[10px] text-slate-500">Debited From Accounts</span>
+            </div>
+          </div>
+
+          {/* Accounts Grid / Table */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {bankAccounts.map(acc => {
+              const isSelected = selectedAccount?.id === acc.id;
+              const isCash = acc.accountType === 'CASH';
+              const isWallet = acc.accountType === 'DIGITAL_WALLET';
+
+              return (
+                <div
+                  key={acc.id}
+                  onClick={() => handleSelectAccountForLedger(acc)}
+                  className={`bg-white p-5 rounded-2xl border transition-all cursor-pointer shadow-xs hover:shadow-md ${
+                    isSelected
+                      ? 'border-indigo-600 ring-2 ring-indigo-500/20'
+                      : 'border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2.5">
+                      <div
+                        className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold ${
+                          isCash
+                            ? 'bg-amber-50 text-amber-600 border border-amber-200'
+                            : isWallet
+                            ? 'bg-purple-50 text-purple-600 border border-purple-200'
+                            : 'bg-indigo-50 text-indigo-600 border border-indigo-200'
+                        }`}
+                      >
+                        {isCash ? <Wallet className="w-5 h-5" /> : isWallet ? <CreditCard className="w-5 h-5" /> : <Landmark className="w-5 h-5" />}
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-black text-slate-900">{acc.accountName}</h4>
+                        <span className="text-[10px] font-semibold text-slate-400 uppercase">
+                          {acc.accountType.replace('_', ' ')}
+                        </span>
+                      </div>
+                    </div>
+
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                        acc.isActive
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                          : 'bg-slate-100 text-slate-500'
+                      }`}
+                    >
+                      {acc.isActive ? 'Active' : 'Disabled'}
+                    </span>
+                  </div>
+
+                  {acc.accountNumber && (
+                    <p className="text-[11px] font-mono text-slate-500 mb-2 truncate">
+                      Acc: {acc.accountNumber}
+                    </p>
+                  )}
+
+                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase">Current Balance</span>
+                      <p className="text-lg font-black text-slate-900">
+                        Rs. {acc.currentBalance.toLocaleString()}
+                      </p>
+                    </div>
+
+                    <div className="text-right text-[10px] text-slate-500 space-y-0.5">
+                      <p>
+                        In: <strong className="text-emerald-700 font-bold">Rs. {acc.totalCredits.toLocaleString()}</strong>
+                      </p>
+                      <p>
+                        Out: <strong className="text-rose-600 font-bold">Rs. {acc.totalDebits.toLocaleString()}</strong>
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-indigo-600 font-bold">
+                    <span>View Transaction History →</span>
+                    <History className="w-3.5 h-3.5" />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Account Ledger Detail Section */}
+          {selectedAccount && (
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden animate-in fade-in duration-200">
+              <div className="p-4 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-50/50">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold">
+                    <History className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900">
+                      Transaction Ledger — {selectedAccount.accountName}
+                    </h3>
+                    <p className="text-xs text-slate-500 font-medium">
+                      Current balance: <strong className="text-slate-900">Rs. {selectedAccount.currentBalance.toLocaleString()}</strong> • Opening Balance: Rs. {selectedAccount.openingBalance.toLocaleString()}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setSelectedAccount(null)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer self-start md:self-auto"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs text-slate-600">
+                  <thead className="bg-slate-50 text-[11px] font-bold uppercase tracking-wider text-slate-500 border-b border-slate-100">
+                    <tr>
+                      <th className="py-3 px-4">Date & Time</th>
+                      <th className="py-3 px-4">Tx Code</th>
+                      <th className="py-3 px-4">Type</th>
+                      <th className="py-3 px-4">Description</th>
+                      <th className="py-3 px-4">Branch</th>
+                      <th className="py-3 px-4 text-right">Credit (+)</th>
+                      <th className="py-3 px-4 text-right">Debit (-)</th>
+                      <th className="py-3 px-4 text-right">Running Balance</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {accountTxLoading ? (
+                      <tr>
+                        <td colSpan={8} className="py-12 text-center text-slate-400">
+                          <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-indigo-500" />
+                          Loading account ledger transactions...
+                        </td>
+                      </tr>
+                    ) : accountTransactions.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="py-12 text-center text-slate-400">
+                          No ledger transactions recorded for this account.
+                        </td>
+                      </tr>
+                    ) : (
+                      accountTransactions.map(tx => {
+                        const hasCredit = tx.creditAmount > 0;
+                        const hasDebit = tx.debitAmount > 0;
+
+                        return (
+                          <tr key={tx.id} className="hover:bg-slate-50/60 transition-colors">
+                            <td className="py-3 px-4 whitespace-nowrap text-slate-700 font-medium">
+                              {tx.transactionDate}
+                              <span className="block text-[10px] text-slate-400">
+                                {new Date(tx.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 font-mono font-bold text-slate-900 whitespace-nowrap">
+                              {tx.transactionCode}
+                            </td>
+                            <td className="py-3 px-4 whitespace-nowrap">
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700">
+                                {tx.transactionType}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 max-w-sm truncate text-slate-700" title={tx.description}>
+                              {tx.description}
+                              {tx.referenceNumber && (
+                                <span className="text-[10px] text-slate-400 block font-mono">
+                                  Ref: {tx.referenceNumber}
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-3 px-4 text-slate-700 font-medium">
+                              {tx.branchName || '—'}
+                            </td>
+                            <td className="py-3 px-4 text-right whitespace-nowrap font-bold text-emerald-700">
+                              {hasCredit ? `+ Rs. ${tx.creditAmount.toLocaleString()}` : '—'}
+                            </td>
+                            <td className="py-3 px-4 text-right whitespace-nowrap font-bold text-rose-600">
+                              {hasDebit ? `- Rs. ${tx.debitAmount.toLocaleString()}` : '—'}
+                            </td>
+                            <td className="py-3 px-4 text-right whitespace-nowrap font-black text-slate-900 bg-slate-50/50">
+                              Rs. {Number(tx.balanceAfter || 0).toLocaleString()}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* VIEW 5: REPORTS TAB */}
       {/* ============================================================ */}
       {activeTab === 'reports' && hasReportsView && (
         <div className="space-y-6">
@@ -1283,7 +2355,6 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
               <span className="text-xs font-bold text-slate-500 uppercase tracking-wider mr-1">Period:</span>
               {[
                 { id: 'today', label: 'Today' },
-                { id: 'yesterday', label: 'Yesterday' },
                 { id: 'week', label: 'This Week' },
                 { id: 'month', label: 'This Month' },
                 { id: 'year', label: 'This Year' },
@@ -1319,7 +2390,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                   />
                   <button
                     onClick={fetchReportsData}
-                    className="px-2.5 py-1 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-lg text-xs font-bold"
+                    className="px-2.5 py-1 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-lg text-xs font-bold cursor-pointer"
                   >
                     Apply
                   </button>
@@ -1333,7 +2404,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                 <select
                   value={repBranch}
                   onChange={e => setRepBranch(e.target.value)}
-                  className="text-xs border border-slate-300 rounded-xl px-3 py-1.5 bg-white font-medium cursor-pointer"
+                  className="text-xs border border-slate-300 rounded-xl px-3 py-1.5 bg-white font-medium focus:ring-2 focus:ring-indigo-500"
                 >
                   <option value="ALL">All Branches</option>
                   {branches.map(b => (
@@ -1345,155 +2416,119 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
               </div>
 
               <button
-                onClick={handleExportCsv}
-                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl border border-slate-300 shadow-2xs flex items-center gap-1 cursor-pointer"
-              >
-                <Download className="w-3.5 h-3.5" />
-                Export CSV
-              </button>
-
-              <button
                 onClick={fetchReportsData}
                 disabled={repLoading}
-                className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 cursor-pointer"
+                className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:text-slate-800 hover:bg-slate-50 cursor-pointer"
+                title="Refresh Report"
               >
                 <RefreshCw className={`w-4 h-4 ${repLoading ? 'animate-spin' : ''}`} />
               </button>
             </div>
           </div>
 
-          {/* KPI Highlight Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3.5">
+          {/* Key Metrics Cards */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
-              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                Total Revenue
-              </span>
-              <p className="text-xl font-black text-slate-900 tracking-tight">
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Total Collection</span>
+              <p className="text-xl font-black text-slate-900 mt-1">
                 Rs. {repMetrics.totalRevenue.toLocaleString()}
               </p>
-              <p className="text-[10px] text-slate-400 mt-1">Across selected period</p>
+              <div className="text-[10px] text-slate-500 mt-1 flex items-center gap-1">
+                <span className="text-amber-600 font-bold">Cash: Rs. {repMetrics.totalCashCollection?.toLocaleString() || 0}</span>
+                <span>•</span>
+                <span className="text-indigo-600 font-bold">Online: Rs. {repMetrics.totalOnlineCollection?.toLocaleString() || 0}</span>
+              </div>
             </div>
 
             <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
-              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                Total Entries
-              </span>
-              <p className="text-xl font-black text-slate-900 tracking-tight">
-                {repMetrics.totalEntries}
-              </p>
-              <p className="text-[10px] text-slate-400 mt-1">{repMetrics.activeDays} active collection days</p>
-            </div>
-
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
-              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                Average Daily
-              </span>
-              <p className="text-xl font-black text-slate-900 tracking-tight">
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Average Daily Collection</span>
+              <p className="text-xl font-black text-indigo-600 mt-1">
                 Rs. {repMetrics.averageDaily.toLocaleString()}
               </p>
-              <p className="text-[10px] text-slate-400 mt-1">Per collection day</p>
+              <span className="text-[10px] text-slate-500 block mt-1">
+                Calculated across {repMetrics.activeDays} active days
+              </span>
             </div>
 
             <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
-              <span className="text-[11px] font-bold text-emerald-600 uppercase tracking-wider block mb-1 flex items-center gap-1">
-                🏆 Top Branch
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Highest Branch</span>
+              <p className="text-base font-black text-slate-900 mt-1 truncate">
+                {repMetrics.highestBranch?.name || '—'}
+              </p>
+              <span className="text-xs font-bold text-emerald-700 block">
+                {repMetrics.highestBranch ? `Rs. ${repMetrics.highestBranch.amount.toLocaleString()}` : '—'}
               </span>
-              <p className="text-sm font-black text-slate-900 truncate">
-                {repMetrics.highestBranch ? repMetrics.highestBranch.name : '—'}
-              </p>
-              <p className="text-xs font-bold text-emerald-600 mt-0.5">
-                {repMetrics.highestBranch ? `Rs. ${repMetrics.highestBranch.amount.toLocaleString()}` : ''}
-              </p>
             </div>
 
             <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
-              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                Lowest Branch
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Lowest Branch</span>
+              <p className="text-base font-black text-slate-900 mt-1 truncate">
+                {repMetrics.lowestBranch?.name || '—'}
+              </p>
+              <span className="text-xs font-bold text-slate-600 block">
+                {repMetrics.lowestBranch ? `Rs. ${repMetrics.lowestBranch.amount.toLocaleString()}` : '—'}
               </span>
-              <p className="text-sm font-black text-slate-900 truncate">
-                {repMetrics.lowestBranch ? repMetrics.lowestBranch.name : '—'}
-              </p>
-              <p className="text-xs font-semibold text-slate-500 mt-0.5">
-                {repMetrics.lowestBranch ? `Rs. ${repMetrics.lowestBranch.amount.toLocaleString()}` : ''}
-              </p>
             </div>
           </div>
 
-          {/* Charts Row: Bar Chart & Donut Chart */}
+          {/* Charts Row */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Bar Chart (2 cols) */}
+            {/* Trend Bar Chart */}
             <div className="lg:col-span-2 bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
-              <div className="mb-4">
-                <h3 className="text-sm font-black text-slate-900">
-                  {repBranch === 'ALL' ? 'Branch Revenue Comparison' : `Daily Revenue Trend — ${branches.find(b => String(b.id) === String(repBranch))?.name || 'Selected Branch'}`}
-                </h3>
-                <p className="text-xs text-slate-500">
-                  {repBranch === 'ALL'
-                    ? 'Total revenue collected by each branch in this period'
-                    : 'Collection trend over time for this location'}
-                </p>
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-sm font-black text-slate-900">Revenue Collection Trend</h3>
+                  <p className="text-xs text-slate-500 font-medium">Daily collection trajectory over the period</p>
+                </div>
+                <span className="text-[11px] font-bold text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-full">
+                  NPR (Rs.)
+                </span>
               </div>
 
-              <div className="h-72 w-full">
-                {repBranch === 'ALL' ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={repBranchComparison.slice(0, 15)}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                      <XAxis
-                        dataKey="branchName"
-                        tick={{ fontSize: 11, fill: '#64748b' }}
-                        tickFormatter={val => (val.length > 12 ? val.substring(0, 10) + '...' : val)}
-                      />
-                      <YAxis
-                        tick={{ fontSize: 11, fill: '#64748b' }}
-                        tickFormatter={val => (val >= 1000 ? `${(val / 1000).toFixed(0)}k` : val)}
-                      />
-                      <Tooltip
-                        formatter={(val: any) => [`Rs. ${Number(val).toLocaleString()}`, 'Total Revenue']}
-                        labelFormatter={label => `Branch: ${label}`}
-                        contentStyle={{ borderRadius: '12px', fontSize: '12px', borderColor: '#e2e8f0' }}
-                      />
-                      <Bar dataKey="totalAmount" fill="#4f46e5" radius={[6, 6, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
+              <div className="h-64">
+                {repTrend.length === 0 ? (
+                  <div className="h-full flex items-center justify-center text-xs text-slate-400">
+                    No data recorded for the selected period.
+                  </div>
                 ) : (
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={repTrend}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                      <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#64748b' }} />
+                      <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} />
                       <YAxis
-                        tick={{ fontSize: 11, fill: '#64748b' }}
-                        tickFormatter={val => (val >= 1000 ? `${(val / 1000).toFixed(0)}k` : val)}
+                        tick={{ fontSize: 10, fill: '#64748b' }}
+                        axisLine={false}
+                        tickLine={false}
+                        tickFormatter={(v: number) => (v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v))}
                       />
                       <Tooltip
                         formatter={(val: any) => [`Rs. ${Number(val).toLocaleString()}`, 'Revenue']}
-                        labelFormatter={label => `Date: ${label}`}
                         contentStyle={{ borderRadius: '12px', fontSize: '12px', borderColor: '#e2e8f0' }}
                       />
-                      <Bar dataKey="amount" fill="#06b6d4" radius={[6, 6, 0, 0]} />
+                      <Bar dataKey="amount" fill="#4f46e5" radius={[6, 6, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 )}
               </div>
             </div>
 
-            {/* Pie / Donut Chart (1 col) */}
+            {/* Distribution Pie Chart */}
             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between">
               <div>
-                <h3 className="text-sm font-black text-slate-900">Branch Contribution</h3>
-                <p className="text-xs text-slate-500 mb-2">Percentage share of overall company revenue</p>
+                <h3 className="text-sm font-black text-slate-900">Branch Share</h3>
+                <p className="text-xs text-slate-500 font-medium">Top contributing branch percentages</p>
               </div>
 
-              <div className="h-64 w-full">
-                {repBranchComparison.filter(b => b.totalAmount > 0).length === 0 ? (
+              <div className="h-48 my-2">
+                {repBranchComparison.length === 0 ? (
                   <div className="h-full flex items-center justify-center text-xs text-slate-400">
-                    No collection data recorded for this period.
+                    No data available.
                   </div>
                 ) : (
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
-                        data={repBranchComparison.filter(b => b.totalAmount > 0).slice(0, 8)}
+                        data={repBranchComparison.slice(0, 8)}
                         dataKey="totalAmount"
                         nameKey="branchName"
                         cx="50%"
@@ -1606,26 +2641,6 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                     ))
                   )}
                 </tbody>
-                {/* Total Row */}
-                {repBranchComparison.length > 0 && (
-                  <tfoot className="bg-slate-100/80 font-black text-xs text-slate-900 border-t-2 border-slate-300">
-                    <tr>
-                      <td className="py-3 px-4">TOTAL (All Branches)</td>
-                      <td className="py-3 px-4 text-center">
-                        {repBranchComparison.reduce((sum, r) => sum + r.entriesCount, 0)}
-                      </td>
-                      <td className="py-3 px-4 text-right text-emerald-700 text-sm">
-                        Rs. {repMetrics.totalRevenue.toLocaleString()}
-                      </td>
-                      <td className="py-3 px-4 text-right">100.0%</td>
-                      <td className="py-3 px-4 text-right">
-                        Rs. {repMetrics.averageDaily.toLocaleString()}
-                      </td>
-                      <td className="py-3 px-4 text-right">—</td>
-                      <td className="py-3 px-4 text-right">—</td>
-                    </tr>
-                  </tfoot>
-                )}
               </table>
             </div>
           </div>
@@ -1703,10 +2718,84 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                   required
                   className="w-full text-xs border border-slate-300 rounded-xl px-3 py-2.5 bg-white font-medium focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                 />
-                <span className="text-[10px] text-slate-400 mt-1 block">
-                  Defaults to today. Future dates are prohibited.
-                </span>
               </div>
+
+              {/* Collection Type Selector */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  Collection Type <span className="text-rose-500">*</span>
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setAddCollectionType('CASH')}
+                    className={`p-3 rounded-2xl border text-left cursor-pointer transition-all ${
+                      addCollectionType === 'CASH'
+                        ? 'border-amber-500 bg-amber-50/50 ring-2 ring-amber-500/20'
+                        : 'border-slate-200 hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs font-bold text-slate-900">💵 Cash</span>
+                      {addCollectionType === 'CASH' && <Check className="w-4 h-4 text-amber-600" />}
+                    </div>
+                    <p className="text-[10px] text-slate-500">
+                      Increases cash balance. Queued for bank deposit.
+                    </p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAddCollectionType('ONLINE');
+                      if (!addReceivedAccountId) {
+                        const firstBank = activeAccounts.find(a => a.accountType !== 'CASH') || activeAccounts[0];
+                        if (firstBank) setAddReceivedAccountId(String(firstBank.id));
+                      }
+                    }}
+                    className={`p-3 rounded-2xl border text-left cursor-pointer transition-all ${
+                      addCollectionType === 'ONLINE'
+                        ? 'border-indigo-600 bg-indigo-50/50 ring-2 ring-indigo-500/20'
+                        : 'border-slate-200 hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs font-bold text-slate-900">💳 Online</span>
+                      {addCollectionType === 'ONLINE' && <Check className="w-4 h-4 text-indigo-600" />}
+                    </div>
+                    <p className="text-[10px] text-slate-500">
+                      Auto-credited to bank / digital wallet ledger.
+                    </p>
+                  </button>
+                </div>
+              </div>
+
+              {/* Conditional Receiving Bank for Online Collection */}
+              {addCollectionType === 'ONLINE' && (
+                <div className="p-3 bg-indigo-50/60 border border-indigo-100 rounded-2xl space-y-1.5 animate-in fade-in duration-150">
+                  <label className="block text-xs font-bold text-indigo-900">
+                    Deposited To / Received Through <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    value={addReceivedAccountId}
+                    onChange={e => setAddReceivedAccountId(e.target.value)}
+                    required
+                    className="w-full text-xs border border-indigo-200 rounded-xl px-3 py-2 bg-white font-medium focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="">Select Receiving Bank / Wallet...</option>
+                    {activeAccounts
+                      .filter(a => a.accountType !== 'CASH')
+                      .map(acc => (
+                        <option key={acc.id} value={acc.id}>
+                          {acc.accountName} ({acc.accountType})
+                        </option>
+                      ))}
+                  </select>
+                  <p className="text-[10px] text-indigo-700">
+                    Amount will automatically be credited to this account's ledger balance upon save.
+                  </p>
+                </div>
+              )}
 
               {/* Revenue Amount */}
               <div>
@@ -1755,7 +2844,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                       key={q}
                       type="button"
                       onClick={() => setAddRemarks(q)}
-                      className="text-[10px] font-semibold px-2 py-0.5 rounded-lg bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 text-slate-600 transition-colors"
+                      className="text-[10px] font-semibold px-2 py-0.5 rounded-lg bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 text-slate-600 transition-colors cursor-pointer"
                     >
                       + {q}
                     </button>
@@ -1787,7 +2876,716 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
       )}
 
       {/* ============================================================ */}
-      {/* MODAL 2: EDIT REVENUE */}
+      {/* MODAL 2: DEPOSIT MODAL (Split Across Multiple Banks) */}
+      {/* ============================================================ */}
+      {showDepositModal && targetCollection && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-xl w-full shadow-2xl border border-slate-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold">
+                  <Landmark className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">
+                    Deposit Cash Collection
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    {targetCollection.branchName} • Ref: {targetCollection.revenueCode || `#${targetCollection.id}`}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowDepositModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveDeposit} className="p-6 space-y-4">
+              {depError && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{depError}</span>
+                </div>
+              )}
+
+              {/* Collection Status Summary Box */}
+              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl grid grid-cols-3 gap-2 text-center text-xs">
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase font-bold">Original Collection</span>
+                  <p className="font-black text-slate-900 mt-0.5">
+                    Rs. {targetCollection.amount.toLocaleString()}
+                  </p>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase font-bold">Already Deposited</span>
+                  <p className="font-bold text-emerald-700 mt-0.5">
+                    Rs. {targetCollection.depositedAmount.toLocaleString()}
+                  </p>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase font-bold">Remaining Cash</span>
+                  <p className="font-black text-amber-600 mt-0.5">
+                    Rs. {targetCollection.remainingAmount.toLocaleString()}
+                  </p>
+                </div>
+              </div>
+
+              {/* Deposit Date & Ref */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Deposit Date <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    value={depAllocDate}
+                    max={getTodayInputStr()}
+                    onChange={e => setDepAllocDate(e.target.value)}
+                    required
+                    className="w-full text-xs border border-slate-300 rounded-xl px-3 py-2 bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Bank Slip / Ref No.</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. SLIP-88492"
+                    value={depAllocRef}
+                    onChange={e => setDepAllocRef(e.target.value)}
+                    className="w-full text-xs border border-slate-300 rounded-xl px-3 py-2 bg-white"
+                  />
+                </div>
+              </div>
+
+              {/* Bank Allocation Rows */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-xs font-bold text-slate-700">
+                    Deposit Allocation (Single or Split) <span className="text-rose-500">*</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleAddAllocationRow}
+                    className="text-xs font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    + Add Another Allocation
+                  </button>
+                </div>
+
+                <div className="space-y-2.5">
+                  {allocations.map((alloc, idx) => (
+                    <div
+                      key={idx}
+                      className="p-3 bg-slate-50 border border-slate-200 rounded-2xl flex items-center gap-2"
+                    >
+                      <div className="flex-1">
+                        <label className="block text-[10px] font-bold text-slate-500 mb-0.5">
+                          Bank / Account #{idx + 1}
+                        </label>
+                        <select
+                          value={alloc.accountId}
+                          onChange={e => handleAllocationChange(idx, 'accountId', e.target.value)}
+                          required
+                          className="w-full text-xs border border-slate-300 rounded-xl px-2.5 py-1.5 bg-white font-medium"
+                        >
+                          <option value="">Select Destination Account...</option>
+                          {activeAccounts.map(a => (
+                            <option key={a.id} value={a.id}>
+                              {a.accountName} ({a.accountType})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="w-36">
+                        <label className="block text-[10px] font-bold text-slate-500 mb-0.5">
+                          Amount (Rs.)
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0.01"
+                          value={alloc.amount}
+                          onChange={e => handleAllocationChange(idx, 'amount', e.target.value)}
+                          placeholder="Amount"
+                          required
+                          className="w-full text-xs font-black border border-slate-300 rounded-xl px-2.5 py-1.5 bg-white"
+                        />
+                      </div>
+
+                      {allocations.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveAllocationRow(idx)}
+                          className="p-1.5 mt-3 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"
+                          title="Remove allocation"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Calculation Summary Footer */}
+                <div className="mt-3 p-3 bg-indigo-50/70 border border-indigo-100 rounded-2xl flex items-center justify-between text-xs">
+                  <div>
+                    <span className="text-slate-600 font-medium">Total Being Deposited: </span>
+                    <strong className="text-indigo-900 font-black text-sm">
+                      Rs. {totalAllocatedAmount.toLocaleString()}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-600 font-medium">Remaining Cash After: </span>
+                    <strong
+                      className={`font-black text-sm ${
+                        targetCollection.remainingAmount - totalAllocatedAmount < 0
+                          ? 'text-rose-600'
+                          : 'text-emerald-700'
+                      }`}
+                    >
+                      Rs. {Math.max(0, targetCollection.remainingAmount - totalAllocatedAmount).toLocaleString()}
+                    </strong>
+                  </div>
+                </div>
+              </div>
+
+              {/* Remarks */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Deposit Remarks <span className="text-slate-400 font-normal">(Optional)</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Daily cash collection deposited at counter..."
+                  value={depAllocRemarks}
+                  onChange={e => setDepAllocRemarks(e.target.value)}
+                  className="w-full text-xs border border-slate-300 rounded-xl px-3 py-2 bg-white"
+                />
+              </div>
+
+              {/* Submit Buttons */}
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowDepositModal(false)}
+                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={depSaving}
+                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer disabled:opacity-50 flex items-center gap-2"
+                >
+                  {depSaving && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                  <span>{depSaving ? 'Saving Deposit...' : 'Confirm Deposit'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* MODAL 3: ADD BANK / ACCOUNT */}
+      {/* ============================================================ */}
+      {showAddBankModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-slate-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-slate-900 text-white flex items-center justify-center font-bold">
+                  <Landmark className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">Add Bank / Account</h3>
+                  <p className="text-xs text-slate-500">Configure new ledger bank or digital wallet account</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowAddBankModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveNewAccount} className="p-6 space-y-4">
+              {newAccError && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{newAccError}</span>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Account Name / Code <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. EBL, NIMB, NIC ASIA, ESEWA-MERCHANT"
+                  value={newAccName}
+                  onChange={e => setNewAccName(e.target.value)}
+                  required
+                  className="w-full text-xs border border-slate-300 rounded-xl px-3 py-2 bg-white uppercase font-bold"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Account Type</label>
+                <select
+                  value={newAccType}
+                  onChange={e => setNewAccType(e.target.value as any)}
+                  className="w-full text-xs border border-slate-300 rounded-xl px-3 py-2 bg-white font-medium"
+                >
+                  <option value="BANK">Commercial Bank</option>
+                  <option value="DIGITAL_WALLET">Digital Wallet (eSewa, Khalti, NepalPay)</option>
+                  <option value="CASH">Cash Drawer</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Official Bank Name</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Everest Bank Ltd."
+                  value={newAccBankName}
+                  onChange={e => setNewAccBankName(e.target.value)}
+                  className="w-full text-xs border border-slate-300 rounded-xl px-3 py-2 bg-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Account Number</label>
+                <input
+                  type="text"
+                  placeholder="e.g. 01200105200001"
+                  value={newAccNumber}
+                  onChange={e => setNewAccNumber(e.target.value)}
+                  className="w-full text-xs border border-slate-300 rounded-xl px-3 py-2 bg-white font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Initial Opening Balance (Rs.)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={newAccOpeningBal}
+                  onChange={e => setNewAccOpeningBal(e.target.value)}
+                  className="w-full text-xs font-black border border-slate-300 rounded-xl px-3 py-2 bg-white"
+                />
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddBankModal(false)}
+                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={newAccSaving}
+                  className="px-5 py-2.5 bg-slate-900 hover:bg-black text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  {newAccSaving ? 'Saving...' : 'Create Account'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* MODAL 4: ADD EXPENSE / PAYMENT */}
+      {/* ============================================================ */}
+      {showExpenseModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-slate-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-rose-600 text-white flex items-center justify-center font-bold">
+                  <Receipt className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">Record Expense / Payment</h3>
+                  <p className="text-xs text-slate-500">Debits selected account without altering revenue totals</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowExpenseModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveExpense} className="p-6 space-y-4">
+              {expError && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{expError}</span>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Paid From (Bank / Cash) <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={expAccountId}
+                  onChange={e => setExpAccountId(e.target.value)}
+                  required
+                  className="w-full text-xs border border-slate-300 rounded-xl px-3 py-2 bg-white font-medium"
+                >
+                  <option value="">Select Account...</option>
+                  {bankAccounts.map(a => (
+                    <option key={a.id} value={a.id}>
+                      {a.accountName} (Balance: Rs. {a.currentBalance.toLocaleString()})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Amount (Rs.) <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    placeholder="e.g. 5000"
+                    value={expAmount}
+                    onChange={e => setExpAmount(e.target.value)}
+                    required
+                    className="w-full text-xs font-black border border-slate-300 rounded-xl px-3 py-2 bg-white text-rose-700"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Expense Date <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    value={expDate}
+                    max={getTodayInputStr()}
+                    onChange={e => setExpDate(e.target.value)}
+                    required
+                    className="w-full text-xs border border-slate-300 rounded-xl px-3 py-2 bg-white"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Category</label>
+                  <select
+                    value={expCategory}
+                    onChange={e => setExpCategory(e.target.value)}
+                    className="w-full text-xs border border-slate-300 rounded-xl px-3 py-2 bg-white"
+                  >
+                    <option value="Office Supplies">Office Supplies</option>
+                    <option value="Utilities & Electricity">Utilities & Electricity</option>
+                    <option value="Internet & Bandwidth">Internet & Bandwidth</option>
+                    <option value="Rent">Office Rent</option>
+                    <option value="Maintenance & Repair">Maintenance & Repair</option>
+                    <option value="Salary & Advance">Salary & Advance</option>
+                    <option value="Travel & Fuel">Travel & Fuel</option>
+                    <option value="Refreshments">Refreshments</option>
+                    <option value="Miscellaneous">Miscellaneous</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Paid To / Payee</label>
+                  <input
+                    type="text"
+                    placeholder="Vendor or staff name"
+                    value={expPaidTo}
+                    onChange={e => setExpPaidTo(e.target.value)}
+                    required
+                    className="w-full text-xs border border-slate-300 rounded-xl px-3 py-2 bg-white"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Voucher / Bill Ref</label>
+                <input
+                  type="text"
+                  placeholder="e.g. BILL-9932"
+                  value={expRefNo}
+                  onChange={e => setExpRefNo(e.target.value)}
+                  className="w-full text-xs border border-slate-300 rounded-xl px-3 py-2 bg-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Remarks</label>
+                <input
+                  type="text"
+                  placeholder="Purpose of expenditure"
+                  value={expRemarks}
+                  onChange={e => setExpRemarks(e.target.value)}
+                  className="w-full text-xs border border-slate-300 rounded-xl px-3 py-2 bg-white"
+                />
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowExpenseModal(false)}
+                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={expSaving}
+                  className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  {expSaving ? 'Saving...' : 'Record Expense'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* MODAL 5: INTERNAL TRANSFER */}
+      {/* ============================================================ */}
+      {showTransferModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-slate-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold">
+                  <ArrowRightLeft className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">Internal Fund Transfer</h3>
+                  <p className="text-xs text-slate-500">Transfers between accounts without altering net company funds</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowTransferModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveTransfer} className="p-6 space-y-4">
+              {trError && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{trError}</span>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">From Account (Source)</label>
+                <select
+                  value={trFromAccId}
+                  onChange={e => setTrFromAccId(e.target.value)}
+                  required
+                  className="w-full text-xs border border-slate-300 rounded-xl px-3 py-2 bg-white font-medium"
+                >
+                  <option value="">Select Source Account...</option>
+                  {bankAccounts.map(a => (
+                    <option key={a.id} value={a.id}>
+                      {a.accountName} (Balance: Rs. {a.currentBalance.toLocaleString()})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">To Account (Destination)</label>
+                <select
+                  value={trToAccId}
+                  onChange={e => setTrToAccId(e.target.value)}
+                  required
+                  className="w-full text-xs border border-slate-300 rounded-xl px-3 py-2 bg-white font-medium"
+                >
+                  <option value="">Select Destination Account...</option>
+                  {bankAccounts
+                    .filter(a => String(a.id) !== trFromAccId)
+                    .map(a => (
+                      <option key={a.id} value={a.id}>
+                        {a.accountName} (Balance: Rs. {a.currentBalance.toLocaleString()})
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Transfer Amount (Rs.)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    placeholder="e.g. 50000"
+                    value={trAmount}
+                    onChange={e => setTrAmount(e.target.value)}
+                    required
+                    className="w-full text-xs font-black border border-slate-300 rounded-xl px-3 py-2 bg-white text-indigo-700"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Transfer Date</label>
+                  <input
+                    type="date"
+                    value={trDate}
+                    max={getTodayInputStr()}
+                    onChange={e => setTrDate(e.target.value)}
+                    required
+                    className="w-full text-xs border border-slate-300 rounded-xl px-3 py-2 bg-white"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Remarks</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Transfer excess counter cash to EBL"
+                  value={trRemarks}
+                  onChange={e => setTrRemarks(e.target.value)}
+                  className="w-full text-xs border border-slate-300 rounded-xl px-3 py-2 bg-white"
+                />
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowTransferModal(false)}
+                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={trSaving}
+                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  {trSaving ? 'Executing...' : 'Execute Transfer'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* MODAL 6: RECONCILIATION VERIFICATION */}
+      {/* ============================================================ */}
+      {showReconModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-slate-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold">
+                  <FileCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">Ledger Balance Reconciliation</h3>
+                  <p className="text-xs text-slate-500">Double-entry audit verification of all financial accounts</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowReconModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {reconLoading ? (
+                <div className="py-12 text-center text-xs text-slate-400">
+                  <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-indigo-500" />
+                  Running automated ledger reconciliation check...
+                </div>
+              ) : reconData ? (
+                <div className="space-y-4">
+                  <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center gap-3">
+                    <CheckCircle2 className="w-6 h-6 text-emerald-600 shrink-0" />
+                    <div>
+                      <h4 className="text-xs font-black text-emerald-900">
+                        {reconData.isReconciled ? 'All Accounts Fully Reconciled' : 'Discrepancy Detected'}
+                      </h4>
+                      <p className="text-[11px] text-emerald-700">
+                        {reconData.isReconciled
+                          ? 'Total calculated company liquid funds match net revenue receipts minus total disbursements perfectly.'
+                          : 'Please review transaction history for discrepancy.'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                      <span className="text-slate-500">Total Revenue Inflows</span>
+                      <p className="font-black text-slate-900 text-sm mt-0.5">
+                        Rs. {Number(reconData.totalRevenues || 0).toLocaleString()}
+                      </p>
+                      <span className="text-[10px] text-slate-400">
+                        Cash: Rs. {Number(reconData.totalCashCollection || 0).toLocaleString()} • Online: Rs. {Number(reconData.totalOnlineCollection || 0).toLocaleString()}
+                      </span>
+                    </div>
+
+                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                      <span className="text-slate-500">Total Disbursements / Expenses</span>
+                      <p className="font-black text-rose-600 text-sm mt-0.5">
+                        Rs. {Number(reconData.totalExpenses || 0).toLocaleString()}
+                      </p>
+                      <span className="text-[10px] text-slate-400">Debited from accounts</span>
+                    </div>
+                  </div>
+
+                  <div className="p-3.5 bg-slate-900 text-white rounded-2xl flex items-center justify-between">
+                    <div>
+                      <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">
+                        Net Available Liquid Funds
+                      </span>
+                      <p className="text-lg font-black mt-0.5">
+                        Rs. {Number(reconData.netCompanyFunds || 0).toLocaleString()}
+                      </p>
+                    </div>
+                    <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-500 text-white">
+                      Verified
+                    </span>
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="pt-2 text-right">
+                <button
+                  onClick={() => setShowReconModal(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* MODAL 7: EDIT REVENUE */}
       {/* ============================================================ */}
       {showEditModal && editingEntry && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
@@ -1798,7 +3596,9 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                   <Edit2 className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-base font-black text-slate-900">Edit Revenue Entry #{editingEntry.id}</h3>
+                  <h3 className="text-base font-black text-slate-900">
+                    Edit Revenue Entry {editingEntry.revenueCode || `#${editingEntry.id}`}
+                  </h3>
                   <p className="text-xs text-slate-500">Branch: {editingEntry.branchName}</p>
                 </div>
               </div>
@@ -1821,7 +3621,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
               <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs flex items-start gap-2">
                 <Info className="w-4 h-4 shrink-0 mt-0.5" />
                 <span>
-                  All modifications to revenue figures will be logged in the permanent activity and security audit trail.
+                  Modifications to revenue amounts will automatically adjust associated ledger balances and be recorded in the security audit trail.
                 </span>
               </div>
 
@@ -1896,7 +3696,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
       )}
 
       {/* ============================================================ */}
-      {/* MODAL 3: VOID CONFIRMATION (Super Admin Only) */}
+      {/* MODAL 8: VOID REVENUE */}
       {/* ============================================================ */}
       {showVoidModal && voidingEntry && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
@@ -1914,8 +3714,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
             <p className="text-xs text-slate-600 leading-relaxed">
               Are you sure you want to void this revenue collection of{' '}
               <strong className="text-slate-900">Rs. {voidingEntry.amount.toLocaleString()}</strong> from{' '}
-              <strong className="text-slate-900">{voidingEntry.revenueDate}</strong>? Financial records are not
-              permanently deleted; this entry will be marked as Voided and removed from revenue totals.
+              <strong className="text-slate-900">{voidingEntry.revenueDate}</strong>? This entry will be marked as Voided and removed from active ledger balances.
             </p>
 
             <div>
@@ -1951,7 +3750,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
       )}
 
       {/* ============================================================ */}
-      {/* MODAL 4: AUDIT HISTORY TRAIL */}
+      {/* MODAL 9: AUDIT HISTORY */}
       {/* ============================================================ */}
       {showHistoryModal && historyEntry && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
@@ -1972,9 +3771,9 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
               </div>
               <button
                 onClick={() => setShowHistoryModal(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-700"
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 cursor-pointer"
               >
-                <X className="w-4 h-4" />
+                <X className="w-5 h-5" />
               </button>
             </div>
 
@@ -2038,7 +3837,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
             <div className="p-4 border-t border-slate-100 text-right">
               <button
                 onClick={() => setShowHistoryModal(false)}
-                className="px-4 py-2 bg-slate-100 text-slate-700 font-bold text-xs rounded-xl hover:bg-slate-200"
+                className="px-4 py-2 bg-slate-100 text-slate-700 font-bold text-xs rounded-xl hover:bg-slate-200 cursor-pointer"
               >
                 Close
               </button>

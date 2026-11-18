@@ -130,7 +130,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
       allowedRoles: ['SUPER_ADMIN', 'MANAGEMENT', 'BRANCH_MANAGER', 'STAFF'],
       permissionKey: 'accounts',
       subItems: [
+        { label: 'Dashboard', path: 'accounts/dashboard', permissionKey: 'accounts.dashboard' },
         { label: 'Revenue', path: 'accounts/revenue', permissionKey: 'accounts.revenue.view' },
+        { label: 'Deposits', path: 'accounts/deposits', permissionKey: 'accounts.deposits.view' },
+        { label: 'Banks', path: 'accounts/banks', permissionKey: 'accounts.banks.view' },
         { label: 'Report', path: 'accounts/report', permissionKey: 'accounts.reports.view' },
       ],
     },

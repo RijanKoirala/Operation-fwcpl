@@ -173,7 +173,7 @@ export const INITIAL_PERMISSIONS: PermissionDefinition[] = [
   { module: 'Operation Center', name: 'Update Status / Remarks', key: 'operation_center.update_status', description: 'Change ticket status (In Progress) and post operation updates/remarks' },
   { module: 'Operation Center', name: 'Close Ticket', key: 'operation_center.close', description: 'Resolve and close operation tickets' },
 
-  // 25. Accounts (Revenue & Reports)
+  // 25. Accounts (Revenue, Deposits, Banks, Expenses & Reports)
   { module: 'Accounts', name: 'View Accounts Module', key: 'accounts.view', description: 'Access Accounts module overview and main interface' },
   { module: 'Accounts', name: 'View Accounts Dashboard', key: 'accounts.dashboard', description: 'View company-wide revenue dashboard, KPI summaries, and branch metrics' },
   { module: 'Accounts', name: 'View Revenue Records', key: 'accounts.revenue.view', description: 'View revenue collection records for permitted branches' },
@@ -181,6 +181,12 @@ export const INITIAL_PERMISSIONS: PermissionDefinition[] = [
   { module: 'Accounts', name: 'Edit Revenue Entry', key: 'accounts.revenue.edit', description: 'Modify existing revenue collection records' },
   { module: 'Accounts', name: 'View Revenue Reports', key: 'accounts.reports.view', description: 'Access graphical revenue analytics, charts, and branch comparison' },
   { module: 'Accounts', name: 'Export Revenue Data', key: 'accounts.export', description: 'Export revenue collections and reports to CSV / Excel' },
+  { module: 'Accounts', name: 'View Cash Deposits', key: 'accounts.deposits.view', description: 'View cash deposit queues, statuses and allocations' },
+  { module: 'Accounts', name: 'Create Cash Deposits', key: 'accounts.deposits.create', description: 'Deposit cash collections into bank accounts' },
+  { module: 'Accounts', name: 'View Banks & Accounts', key: 'accounts.banks.view', description: 'View company bank balances, digital wallets and cash ledger' },
+  { module: 'Accounts', name: 'Manage Banks & Accounts', key: 'accounts.banks.manage', description: 'Add, update accounts and configure opening balances' },
+  { module: 'Accounts', name: 'Record Account Expenses', key: 'accounts.expenses.create', description: 'Record expenses and vendor payments from bank or cash accounts' },
+  { module: 'Accounts', name: 'Transfer Between Accounts', key: 'accounts.transfers.create', description: 'Transfer funds internally between company accounts' },
 ];
 
 export const seedRbacData = async (): Promise<void> => {

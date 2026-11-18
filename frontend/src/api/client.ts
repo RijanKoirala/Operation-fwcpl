@@ -403,7 +403,7 @@ export const api = {
     seedHistorical: () => api.post('/operation-tickets/seed-historical', {}),
   },
 
-  // Accounts Module (Revenue & Reports)
+  // Accounts Module (Revenue, Deposits, Banks, Expenses & Reports)
   accounts: {
     getDashboard: (params?: any) => api.get(`/accounts/dashboard${toQueryString(params)}`),
     getReports: (params?: any) => api.get(`/accounts/reports${toQueryString(params)}`),
@@ -413,6 +413,30 @@ export const api = {
     updateRevenue: (id: number, data: any) => api.put(`/accounts/revenue/${id}`, data),
     voidRevenue: (id: number, data?: { reason?: string }) => api.patch(`/accounts/revenue/${id}/void`, data || {}),
     exportCsvUrl: (params?: any) => `/api/accounts/export${toQueryString(params)}`,
+
+    // Deposits API
+    getDepositsSummary: (params?: any) => api.get(`/accounts/deposits/summary${toQueryString(params)}`),
+    getDepositCollections: (params?: any) => api.get(`/accounts/deposits/collections${toQueryString(params)}`),
+    getDepositHistory: (params?: any) => api.get(`/accounts/deposits/history${toQueryString(params)}`),
+    createDeposit: (data: any) => api.post('/accounts/deposits', data),
+
+    // Banks & Accounts API
+    getBanks: (params?: any) => api.get(`/accounts/banks${toQueryString(params)}`),
+    getActiveAccounts: () => api.get('/accounts/banks/active'),
+    getBankById: (id: number, params?: any) => api.get(`/accounts/banks/${id}${toQueryString(params)}`),
+    createBank: (data: any) => api.post('/accounts/banks', data),
+    updateBank: (id: number, data: any) => api.put(`/accounts/banks/${id}`, data),
+    updateOpeningBalance: (id: number, data: any) => api.patch(`/accounts/banks/${id}/opening-balance`, data),
+
+    // Expenses & Payments API
+    getExpenses: (params?: any) => api.get(`/accounts/expenses${toQueryString(params)}`),
+    createExpense: (data: any) => api.post('/accounts/expenses', data),
+
+    // Internal Transfers API
+    createTransfer: (data: any) => api.post('/accounts/transfers', data),
+
+    // Ledger & Reconciliation API
+    getReconciliation: () => api.get('/accounts/reconciliation'),
   },
 };
 

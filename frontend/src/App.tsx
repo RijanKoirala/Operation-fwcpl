@@ -156,7 +156,10 @@ export const App: React.FC = () => {
       information: 'information',
       'operation-center': 'operation_center',
       accounts: 'accounts.revenue.view',
+      'accounts/dashboard': 'accounts.dashboard',
       'accounts/revenue': 'accounts.revenue.view',
+      'accounts/deposits': 'accounts.deposits.view',
+      'accounts/banks': 'accounts.banks.view',
       'accounts/report': 'accounts.reports.view',
       'accounts/reports': 'accounts.reports.view',
     };
@@ -247,12 +250,17 @@ export const App: React.FC = () => {
       case 'operation-center':
         return <OperationCenter onNavigate={handleNavigate} />;
       case 'accounts':
+      case 'accounts/dashboard':
         if (!isSuperAdmin && !hasPermission('accounts.dashboard') && hasPermission('accounts.revenue.view')) {
           return <Accounts initialTab="revenue" onNavigate={handleNavigate} />;
         }
         return <Accounts initialTab="dashboard" onNavigate={handleNavigate} />;
       case 'accounts/revenue':
         return <Accounts initialTab="revenue" onNavigate={handleNavigate} />;
+      case 'accounts/deposits':
+        return <Accounts initialTab="deposits" onNavigate={handleNavigate} />;
+      case 'accounts/banks':
+        return <Accounts initialTab="banks" onNavigate={handleNavigate} />;
       case 'accounts/report':
       case 'accounts/reports':
         return <Accounts initialTab="reports" onNavigate={handleNavigate} />;
