@@ -673,17 +673,26 @@ router.put(
         remarks,
       } = req.body;
 
-      const billedUnitsNum = billed_units !== undefined ? parseFloat(billed_units) : parseFloat(prev.billed_units);
-      const ratePerUnitNum = rate_per_unit !== undefined ? parseFloat(rate_per_unit) : parseFloat(prev.rate_per_unit);
-      const billAmountNum = bill_amount !== undefined ? parseFloat(bill_amount) : parseFloat(prev.bill_amount);
-      const paidAmountNum = paid_amount !== undefined ? parseFloat(paid_amount) : parseFloat(prev.paid_amount);
-      const paidUnitsNum = paid_units !== undefined ? parseFloat(paid_units) : parseFloat(prev.paid_units);
-      const dueUnitsNum = Math.max(0, parseFloat((billedUnitsNum - paidUnitsNum).toFixed(2)));
+      let billedUnitsNum = billed_units !== undefined ? parseFloat(billed_units) : parseFloat(prev.billed_units || 0);
+      let ratePerUnitNum = rate_per_unit !== undefined ? parseFloat(rate_per_unit) : parseFloat(prev.rate_per_unit || 0);
+      let billAmountNum = bill_amount !== undefined ? parseFloat(bill_amount) : parseFloat(prev.bill_amount || 0);
+      let paidAmountNum = paid_amount !== undefined ? parseFloat(paid_amount) : parseFloat(prev.paid_amount || 0);
+      let paidUnitsNum = paid_units !== undefined ? parseFloat(paid_units) : parseFloat(prev.paid_units || 0);
 
-      let status = payment_status || prev.payment_status;
-      if (!payment_status) {
+      let status = payment_status ? String(payment_status).toUpperCase().trim() : '';
+
+      // If user sets status to PAID or if paidAmount covers billAmount
+      if (status === 'PAID') {
+        if (paidAmountNum <= 0 && billAmountNum > 0) {
+          paidAmountNum = billAmountNum;
+        }
+        if (paidUnitsNum <= 0 && billedUnitsNum > 0) {
+          paidUnitsNum = billedUnitsNum;
+        }
+      } else if (!status || status === 'AUTO') {
         if (paidAmountNum >= billAmountNum && billAmountNum > 0) {
           status = 'PAID';
+          if (paidUnitsNum <= 0 && billedUnitsNum > 0) paidUnitsNum = billedUnitsNum;
         } else if (paidAmountNum > 0) {
           status = 'PARTIALLY_PAID';
         } else if (due_date && new Date(due_date) < new Date()) {
@@ -691,7 +700,13 @@ router.put(
         } else {
           status = 'UNPAID';
         }
+      } else if (status === 'UNPAID') {
+        paidAmountNum = 0;
+        paidUnitsNum = 0;
       }
+
+      const dueUnitsNum = Math.max(0, parseFloat((billedUnitsNum - paidUnitsNum).toFixed(2)));
+      const effectivePaymentDate = payment_date || (status === 'PAID' ? (prev.payment_date || new Date().toISOString().split('T')[0]) : prev.payment_date);
 
       const files = req.files as { [fieldname: string]: Express.Multer.File[] } | undefined;
       const billImageUrl = files?.['bill_image'] ? `/uploads/${files['bill_image'][0].filename}` : prev.bill_image_url;
@@ -709,7 +724,7 @@ router.put(
              paid_units = $8,
              due_units = $9,
              payment_status = $10,
-             payment_date = COALESCE($11, payment_date),
+             payment_date = $11,
              payment_method = COALESCE($12, payment_method),
              bill_image_url = $13,
              receipt_image_url = $14,
@@ -728,7 +743,7 @@ router.put(
           paidUnitsNum,
           dueUnitsNum,
           status,
-          payment_date || null,
+          effectivePaymentDate || null,
           payment_method || null,
           billImageUrl,
           receiptImageUrl,
@@ -759,11 +774,94 @@ router.put(
 );
 
 // ============================================================
+// 10B. PATCH /api/electricity/payments/:id/pay - Quick Mark Bill as Paid
+// ============================================================
+router.patch(
+  '/payments/:id/pay',
+  authenticate,
+  requirePermission('electricity.payment.edit', 'electricity.payment.create'),
+  upload.fields([{ name: 'receipt_image', maxCount: 1 }]),
+  async (req: Request, res: Response) => {
+    try {
+      const paymentId = parseInt(req.params.id, 10);
+      const existing = await db.query(`SELECT * FROM electricity_payments WHERE id = $1`, [paymentId]);
+      if (existing.rowCount === 0) {
+        return res.status(404).json({ success: false, message: 'Payment record not found.' });
+      }
+
+      const prev = existing.rows[0];
+      const {
+        paid_amount,
+        paid_units,
+        payment_date,
+        payment_method,
+        remarks,
+      } = req.body;
+
+      const billAmount = parseFloat(prev.bill_amount || 0);
+      const billedUnits = parseFloat(prev.billed_units || 0);
+      const paidAmt = paid_amount !== undefined && paid_amount !== '' && !isNaN(parseFloat(paid_amount))
+        ? parseFloat(paid_amount)
+        : billAmount;
+      const paidUnitsNum = paid_units !== undefined && paid_units !== '' && !isNaN(parseFloat(paid_units))
+        ? parseFloat(paid_units)
+        : billedUnits;
+      const dueUnits = Math.max(0, parseFloat((billedUnits - paidUnitsNum).toFixed(2)));
+      const payDate = payment_date || new Date().toISOString().split('T')[0];
+      const payMethod = payment_method || prev.payment_method || 'Online';
+
+      const files = req.files as { [fieldname: string]: Express.Multer.File[] } | undefined;
+      const receiptImageUrl = files?.['receipt_image'] ? `/uploads/${files['receipt_image'][0].filename}` : prev.receipt_image_url;
+
+      const upd = await db.query(
+        `UPDATE electricity_payments
+         SET paid_amount = $1,
+             paid_units = $2,
+             due_units = $3,
+             payment_status = 'PAID',
+             payment_date = $4,
+             payment_method = $5,
+             receipt_image_url = $6,
+             remarks = COALESCE($7, remarks),
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $8
+         RETURNING *`,
+        [paidAmt, paidUnitsNum, dueUnits, payDate, payMethod, receiptImageUrl, remarks || null, paymentId]
+      );
+
+      await logActivity({
+        userId: req.user!.id,
+        action: 'PAY_ELECTRICITY_BILL',
+        module: 'Electricity Meter',
+        recordId: paymentId,
+        details: { billNumber: prev.bill_number, billAmount, paidAmount: paidAmt, paymentMethod: payMethod },
+        req,
+      });
+
+      return res.json({
+        success: true,
+        message: 'Bill marked as PAID successfully.',
+        payment: upd.rows[0],
+      });
+    } catch (err: any) {
+      console.error('Error marking bill as paid:', err);
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  }
+);
+
+// ============================================================
 // 11. DELETE /api/electricity/payments/:id - Delete payment
 // ============================================================
-router.delete('/payments/:id', authenticate, requirePermission('electricity.payment.edit'), async (req: Request, res: Response) => {
+router.delete('/payments/:id', authenticate, requirePermission('electricity.payment.edit', 'electricity.payment.delete', 'electricity.meters.delete'), async (req: Request, res: Response) => {
   try {
     const paymentId = parseInt(req.params.id, 10);
+    const existing = await db.query(`SELECT * FROM electricity_payments WHERE id = $1`, [paymentId]);
+    if (existing.rowCount === 0) {
+      return res.status(404).json({ success: false, message: 'Payment record not found.' });
+    }
+
+    const prev = existing.rows[0];
     await db.query(`DELETE FROM electricity_payments WHERE id = $1`, [paymentId]);
 
     await logActivity({
@@ -771,6 +869,11 @@ router.delete('/payments/:id', authenticate, requirePermission('electricity.paym
       action: 'DELETE_ELECTRICITY_PAYMENT',
       module: 'Electricity Meter',
       recordId: paymentId,
+      details: {
+        billNumber: prev.bill_number,
+        billAmount: prev.bill_amount,
+        paymentStatus: prev.payment_status,
+      },
       req,
     });
 

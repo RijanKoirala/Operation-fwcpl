@@ -1095,4 +1095,190 @@ router.get('/departments', requirePermission('departments.view'), async (req: Re
   }
 });
 
+// POST /api/admin/departments - Create a new department
+router.post('/departments', requirePermission('departments.edit'), async (req: Request, res: Response) => {
+  try {
+    const { name, code, description } = req.body;
+    if (!name || !String(name).trim()) {
+      return res.status(400).json({ success: false, message: 'Department name is required.' });
+    }
+
+    const trimmedName = String(name).trim();
+    const formattedCode = (code && String(code).trim())
+      ? String(code).trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '_')
+      : trimmedName.toUpperCase().replace(/[^A-Z0-9_-]/g, '_');
+
+    // Check uniqueness
+    const existing = await db.query(
+      `SELECT id, name, code FROM departments WHERE UPPER(name) = UPPER($1) OR UPPER(code) = UPPER($2)`,
+      [trimmedName, formattedCode]
+    );
+
+    if (existing.rowCount && existing.rowCount > 0) {
+      const match = existing.rows[0];
+      if (match.name.toUpperCase() === trimmedName.toUpperCase()) {
+        return res.status(400).json({ success: false, message: `Department with name "${trimmedName}" already exists.` });
+      }
+      return res.status(400).json({ success: false, message: `Department code "${formattedCode}" is already in use.` });
+    }
+
+    const ins = await db.query(
+      `INSERT INTO departments (name, code, description, created_at)
+       VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+       RETURNING *`,
+      [trimmedName, formattedCode, description ? String(description).trim() : null]
+    );
+
+    const newDept = ins.rows[0];
+
+    await logActivity({
+      userId: req.user!.id,
+      action: 'CREATE_DEPARTMENT',
+      module: 'DEPARTMENTS',
+      recordId: newDept.id,
+      details: { name: newDept.name, code: newDept.code },
+      req,
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: 'Department created successfully.',
+      department: newDept,
+    });
+  } catch (err: any) {
+    console.error('Error creating department:', err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// PUT /api/admin/departments/:id - Update an existing department
+router.put('/departments/:id', requirePermission('departments.edit'), async (req: Request, res: Response) => {
+  try {
+    const deptId = parseInt(req.params.id, 10);
+    const existing = await db.query(`SELECT * FROM departments WHERE id = $1`, [deptId]);
+    if (existing.rowCount === 0) {
+      return res.status(404).json({ success: false, message: 'Department not found.' });
+    }
+
+    const prev = existing.rows[0];
+    const { name, code, description } = req.body;
+
+    const trimmedName = name !== undefined ? String(name).trim() : prev.name;
+    let formattedCode = prev.code;
+    if (code !== undefined && String(code).trim()) {
+      formattedCode = String(code).trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '_');
+    }
+
+    // Core department code protection
+    const coreCodes = ['OPERATION', 'NOC', 'BRANCHES'];
+    if (coreCodes.includes(prev.code.toUpperCase()) && formattedCode !== prev.code) {
+      return res.status(400).json({
+        success: false,
+        message: `The system code for core department '${prev.code}' cannot be modified.`,
+      });
+    }
+
+    // Uniqueness check excluding current record
+    const dupCheck = await db.query(
+      `SELECT id, name, code FROM departments WHERE (UPPER(name) = UPPER($1) OR UPPER(code) = UPPER($2)) AND id != $3`,
+      [trimmedName, formattedCode, deptId]
+    );
+
+    if (dupCheck.rowCount && dupCheck.rowCount > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Another department already exists with the same name or code.',
+      });
+    }
+
+    const upd = await db.query(
+      `UPDATE departments
+       SET name = $1,
+           code = $2,
+           description = $3
+       WHERE id = $4
+       RETURNING *`,
+      [
+        trimmedName,
+        formattedCode,
+        description !== undefined ? (description ? String(description).trim() : null) : prev.description,
+        deptId,
+      ]
+    );
+
+    await logActivity({
+      userId: req.user!.id,
+      action: 'UPDATE_DEPARTMENT',
+      module: 'DEPARTMENTS',
+      recordId: deptId,
+      details: { name: upd.rows[0].name, code: upd.rows[0].code },
+      req,
+    });
+
+    return res.json({
+      success: true,
+      message: 'Department updated successfully.',
+      department: upd.rows[0],
+    });
+  } catch (err: any) {
+    console.error('Error updating department:', err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// DELETE /api/admin/departments/:id - Delete a department
+router.delete('/departments/:id', requirePermission('departments.edit'), async (req: Request, res: Response) => {
+  try {
+    const deptId = parseInt(req.params.id, 10);
+    const existing = await db.query(`SELECT * FROM departments WHERE id = $1`, [deptId]);
+    if (existing.rowCount === 0) {
+      return res.status(404).json({ success: false, message: 'Department not found.' });
+    }
+
+    const dept = existing.rows[0];
+
+    // Prevent deletion of core departments
+    const coreCodes = ['OPERATION', 'NOC', 'BRANCHES'];
+    if (coreCodes.includes(dept.code.toUpperCase())) {
+      return res.status(400).json({
+        success: false,
+        message: `Core department '${dept.name}' (${dept.code}) cannot be deleted as it is vital to system architecture.`,
+      });
+    }
+
+    // Check if users or roles are attached
+    const userCountRes = await db.query(`SELECT COUNT(*) as count FROM users WHERE department_id = $1`, [deptId]);
+    const roleCountRes = await db.query(`SELECT COUNT(*) as count FROM roles WHERE department_id = $1`, [deptId]);
+
+    const userCount = parseInt(userCountRes.rows[0]?.count || '0', 10);
+    const roleCount = parseInt(roleCountRes.rows[0]?.count || '0', 10);
+
+    if (userCount > 0 || roleCount > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot delete department: ${userCount} user(s) and ${roleCount} role(s) are assigned to it. Please reassign them first.`,
+      });
+    }
+
+    await db.query(`DELETE FROM departments WHERE id = $1`, [deptId]);
+
+    await logActivity({
+      userId: req.user!.id,
+      action: 'DELETE_DEPARTMENT',
+      module: 'DEPARTMENTS',
+      recordId: deptId,
+      details: { name: dept.name, code: dept.code },
+      req,
+    });
+
+    return res.json({
+      success: true,
+      message: `Department '${dept.name}' deleted successfully.`,
+    });
+  } catch (err: any) {
+    console.error('Error deleting department:', err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 export default router;

@@ -149,6 +149,13 @@ export const Administration: React.FC<AdministrationProps> = ({
   // TAB 4: DEPARTMENTS STATE
   // -------------------------------------------------------------
   const [loadingDepartments, setLoadingDepartments] = useState(false);
+  const [showDepartmentModal, setShowDepartmentModal] = useState(false);
+  const [editingDepartment, setEditingDepartment] = useState<DepartmentItem | null>(null);
+  const [departmentFormName, setDepartmentFormName] = useState('');
+  const [departmentFormCode, setDepartmentFormCode] = useState('');
+  const [departmentFormDescription, setDepartmentFormDescription] = useState('');
+  const [savingDepartment, setSavingDepartment] = useState(false);
+  const [departmentFormError, setDepartmentFormError] = useState<string | null>(null);
 
   // -------------------------------------------------------------
   // TAB 5: AUDIT LOGS STATE
@@ -598,6 +605,80 @@ export const Administration: React.FC<AdministrationProps> = ({
       showToast(err.message || 'Failed to delete role.', 'error');
     } finally {
       setDeletingRole(false);
+    }
+  };
+
+  // -------------------------------------------------------------
+  // TAB 4: DEPARTMENT HANDLERS
+  // -------------------------------------------------------------
+  const openCreateDepartmentModal = () => {
+    setEditingDepartment(null);
+    setDepartmentFormName('');
+    setDepartmentFormCode('');
+    setDepartmentFormDescription('');
+    setDepartmentFormError(null);
+    setShowDepartmentModal(true);
+  };
+
+  const openEditDepartmentModal = (dept: DepartmentItem) => {
+    setEditingDepartment(dept);
+    setDepartmentFormName(dept.name);
+    setDepartmentFormCode(dept.code);
+    setDepartmentFormDescription(dept.description || '');
+    setDepartmentFormError(null);
+    setShowDepartmentModal(true);
+  };
+
+  const handleSaveDepartment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!departmentFormName.trim()) {
+      setDepartmentFormError('Department name is required.');
+      return;
+    }
+    setSavingDepartment(true);
+    setDepartmentFormError(null);
+    try {
+      if (editingDepartment) {
+        await api.admin.updateDepartment(editingDepartment.id, {
+          name: departmentFormName.trim(),
+          code: departmentFormCode.trim(),
+          description: departmentFormDescription.trim(),
+        });
+        showToast(`Department '${departmentFormName}' updated successfully.`);
+      } else {
+        await api.admin.createDepartment({
+          name: departmentFormName.trim(),
+          code: departmentFormCode.trim(),
+          description: departmentFormDescription.trim(),
+        });
+        showToast(`Department '${departmentFormName}' created successfully.`);
+      }
+      setShowDepartmentModal(false);
+      loadDepartments();
+      loadReferenceData();
+    } catch (err: any) {
+      setDepartmentFormError(err.message || 'Failed to save department.');
+    } finally {
+      setSavingDepartment(false);
+    }
+  };
+
+  const handleDeleteDepartment = async (dept: DepartmentItem) => {
+    const isCore = ['OPERATION', 'NOC', 'BRANCHES'].includes(dept.code.toUpperCase());
+    if (isCore) {
+      showToast(`Core department '${dept.name}' cannot be deleted.`, 'error');
+      return;
+    }
+    if (!window.confirm(`Are you sure you want to delete department '${dept.name}' (${dept.code})?`)) {
+      return;
+    }
+    try {
+      await api.admin.deleteDepartment(dept.id);
+      showToast(`Department '${dept.name}' deleted successfully.`);
+      loadDepartments();
+      loadReferenceData();
+    } catch (err: any) {
+      showToast(err.message || 'Failed to delete department.', 'error');
     }
   };
 
@@ -1597,15 +1678,26 @@ export const Administration: React.FC<AdministrationProps> = ({
       {/* ========================================================= */}
       {activeTab === 'departments' && (
         <div className="space-y-6">
-          <div>
-            <h3 className="text-base font-bold text-slate-900">Organizational Departmental Scopes</h3>
-            <p className="text-xs text-slate-500">
-              The platform operates across three primary functional pillars. Administrators are scoped to these core departments.
-            </p>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h3 className="text-base font-bold text-slate-900">Organizational Departmental Scopes</h3>
+              <p className="text-xs text-slate-500">
+                Manage organizational departments and functional scoping for administrators, staff, and RBAC roles.
+              </p>
+            </div>
+            {hasPermission('departments.edit') && (
+              <button
+                onClick={openCreateDepartmentModal}
+                className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer self-start sm:self-auto"
+              >
+                <Plus className="w-4 h-4" /> Add Department
+              </button>
+            )}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {departments.map(dept => {
+              const isCore = ['OPERATION', 'NOC', 'BRANCHES'].includes(dept.code.toUpperCase());
               let icon = <Briefcase className="w-6 h-6 text-blue-600" />;
               let gradient = 'from-blue-600 to-indigo-600';
               let badgeText = 'Headquarters Operations';
@@ -1618,12 +1710,20 @@ export const Administration: React.FC<AdministrationProps> = ({
                 icon = <Building2 className="w-6 h-6 text-emerald-600" />;
                 gradient = 'from-emerald-600 to-teal-600';
                 badgeText = '20+ Physical Branches';
+              } else if (dept.code === 'ACCOUNTS' || dept.code === 'FINANCE') {
+                icon = <Building className="w-6 h-6 text-amber-600" />;
+                gradient = 'from-amber-500 to-orange-600';
+                badgeText = 'Revenue & Financial Ledgers';
+              } else {
+                icon = <Building className="w-6 h-6 text-indigo-600" />;
+                gradient = 'from-indigo-600 to-sky-600';
+                badgeText = 'Corporate Department';
               }
 
               return (
                 <div
                   key={dept.id}
-                  className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-6 flex flex-col justify-between relative overflow-hidden"
+                  className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-6 flex flex-col justify-between relative overflow-hidden group hover:border-slate-300 transition-all"
                 >
                   <div className={`absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r ${gradient}`} />
 
@@ -1632,9 +1732,31 @@ export const Administration: React.FC<AdministrationProps> = ({
                       <div className="w-12 h-12 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center shadow-xs">
                         {icon}
                       </div>
-                      <span className="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider bg-slate-100 text-slate-600">
-                        {dept.code}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider bg-slate-100 text-slate-600">
+                          {dept.code}
+                        </span>
+                        {hasPermission('departments.edit') && (
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => openEditDepartmentModal(dept)}
+                              className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
+                              title="Edit Department"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            {!isCore && (
+                              <button
+                                onClick={() => handleDeleteDepartment(dept)}
+                                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                                title="Delete Department"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
 
                     <h4 className="text-lg font-black text-slate-900 mb-1">{dept.name}</h4>
@@ -1645,16 +1767,26 @@ export const Administration: React.FC<AdministrationProps> = ({
                           ? 'Oversees central tasks, directives, executive instructions, podiums, and KPI targets across the company.'
                           : dept.code === 'NOC'
                           ? 'Monitors telecommunications health, manages network incident escalations, and resolves customer connectivity problems.'
-                          : 'Manages physical branch counters, staff attendance, customer onboarding, and local follow-ups.')}
+                          : dept.code === 'BRANCHES'
+                          ? 'Manages physical branch counters, staff attendance, customer onboarding, and local follow-ups.'
+                          : 'Manages departmental functions, operational records, and personnel.')}
                     </p>
                   </div>
 
                   <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
-                    <div>
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                        Active Staff & Admins
-                      </span>
-                      <span className="text-base font-black text-slate-900">{dept.active_users_count || 0}</span>
+                    <div className="flex items-center gap-4">
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                          Active Staff
+                        </span>
+                        <span className="text-base font-black text-slate-900">{dept.active_users_count || 0}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                          Roles
+                        </span>
+                        <span className="text-base font-black text-slate-900">{dept.roles_count || 0}</span>
+                      </div>
                     </div>
 
                     <button
@@ -2544,6 +2676,99 @@ export const Administration: React.FC<AdministrationProps> = ({
             </button>
           </div>
         </div>
+      </Modal>
+
+      {/* ========================================================= */}
+      {/* MODAL 7: CREATE / EDIT DEPARTMENT                         */}
+      {/* ========================================================= */}
+      <Modal
+        isOpen={showDepartmentModal}
+        onClose={() => setShowDepartmentModal(false)}
+        title={editingDepartment ? 'Edit Department' : 'Add New Department'}
+        subtitle={
+          editingDepartment
+            ? `Update departmental information for ${editingDepartment.name}`
+            : 'Register a new functional department for operational scoping and RBAC roles.'
+        }
+        maxWidth="md"
+      >
+        <form onSubmit={handleSaveDepartment} className="space-y-4">
+          {departmentFormError && (
+            <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{departmentFormError}</span>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">
+              Department Name <span className="text-rose-500">*</span>
+            </label>
+            <input
+              type="text"
+              required
+              value={departmentFormName}
+              onChange={e => {
+                const val = e.target.value;
+                setDepartmentFormName(val);
+                if (!editingDepartment && !departmentFormCode) {
+                  setDepartmentFormCode(val.toUpperCase().replace(/[^A-Z0-9_-]/g, '_'));
+                }
+              }}
+              placeholder="e.g. Accounts & Finance, Human Resources, Sales"
+              className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">
+              Department Code <span className="text-rose-500">*</span>
+            </label>
+            <input
+              type="text"
+              required
+              disabled={editingDepartment && ['OPERATION', 'NOC', 'BRANCHES'].includes(editingDepartment.code.toUpperCase())}
+              value={departmentFormCode}
+              onChange={e => setDepartmentFormCode(e.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, '_'))}
+              placeholder="e.g. ACCOUNTS, HR, SALES"
+              className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono uppercase font-bold disabled:bg-slate-100 disabled:text-slate-400"
+            />
+            {editingDepartment && ['OPERATION', 'NOC', 'BRANCHES'].includes(editingDepartment.code.toUpperCase()) && (
+              <p className="text-[11px] text-amber-600 mt-1">Core system department codes cannot be modified.</p>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">Description</label>
+            <textarea
+              rows={3}
+              value={departmentFormDescription}
+              onChange={e => setDepartmentFormDescription(e.target.value)}
+              placeholder="Describe the department's responsibilities, function, and team scope..."
+              className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+            />
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={() => setShowDepartmentModal(false)}
+              className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={savingDepartment}
+              className="flex items-center gap-2 px-5 py-2 text-xs font-extrabold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-xs transition-all cursor-pointer disabled:opacity-60"
+            >
+              {savingDepartment && (
+                <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              )}
+              <span>{editingDepartment ? 'Save Changes' : 'Create Department'}</span>
+            </button>
+          </div>
+        </form>
       </Modal>
     </div>
   );

@@ -291,6 +291,12 @@ export const api = {
 
     // Departments
     getDepartments: () => api.get('/admin/departments'),
+    createDepartment: (data: { name: string; code?: string; description?: string }) =>
+      api.post('/admin/departments', data),
+    updateDepartment: (id: number, data: { name: string; code?: string; description?: string }) =>
+      api.put(`/admin/departments/${id}`, data),
+    deleteDepartment: (id: number) =>
+      api.delete(`/admin/departments/${id}`),
   },
 
   // Goods Items Catalog
@@ -355,6 +361,12 @@ export const api = {
     getPayments: (params?: any) => api.get(`/electricity/payments${toQueryString(params)}`),
     createPayment: (formData: FormData) => api.post('/electricity/payments', formData),
     updatePayment: (id: number, formData: FormData) => api.put(`/electricity/payments/${id}`, formData),
+    payBill: (id: number, formData?: FormData | Record<string, any>) => {
+      if (formData instanceof FormData) {
+        return api.patch(`/electricity/payments/${id}/pay`, formData);
+      }
+      return api.patch(`/electricity/payments/${id}/pay`, formData || {});
+    },
     deletePayment: (id: number) => api.delete(`/electricity/payments/${id}`),
     getStats: (params?: any) => api.get(`/electricity/stats${toQueryString(params)}`),
   },

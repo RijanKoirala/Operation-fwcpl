@@ -73,6 +73,16 @@ export const ElectricityMeter: React.FC = () => {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentTargetMeter, setPaymentTargetMeter] = useState<any | null>(null);
   const [editingPayment, setEditingPayment] = useState<any | null>(null);
+  const [showQuickPayModal, setShowQuickPayModal] = useState(false);
+  const [quickPayTarget, setQuickPayTarget] = useState<any | null>(null);
+  const [quickPayForm, setQuickPayForm] = useState({
+    paid_amount: '',
+    paid_units: '',
+    payment_date: new Date().toISOString().split('T')[0],
+    payment_method: 'Online',
+    remarks: '',
+    receipt_image: null as File | null,
+  });
   const [previewImage, setPreviewImage] = useState<string | null>(null);
 
   // Forms state
@@ -326,6 +336,68 @@ export const ElectricityMeter: React.FC = () => {
       fetchData();
     } catch (err: any) {
       alert(err.message || 'Failed to delete meter.');
+    }
+  };
+
+  // Delete Mistaken Payment / Bill
+  const handleDeletePayment = async (payment: any) => {
+    const billRef = payment.bill_number ? `Bill #${payment.bill_number}` : `Payment #${payment.id}`;
+    if (!window.confirm(`Are you sure you want to delete mistaken record '${billRef}' for ${payment.branch_name || 'branch'}? This action cannot be undone.`)) {
+      return;
+    }
+    try {
+      await api.electricity.deletePayment(payment.id);
+      fetchData();
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete payment record.');
+    }
+  };
+
+  // Open Quick Pay Modal
+  const openQuickPayModal = (payment: any) => {
+    setQuickPayTarget(payment);
+    const billAmt = parseFloat(payment.bill_amount || 0);
+    const paidAmt = parseFloat(payment.paid_amount || 0);
+    const remAmt = Math.max(0, parseFloat((billAmt - paidAmt).toFixed(2)));
+    const billedUnits = parseFloat(payment.billed_units || 0);
+    const paidUnits = parseFloat(payment.paid_units || 0);
+    const remUnits = Math.max(0, parseFloat((billedUnits - paidUnits).toFixed(2)));
+
+    setQuickPayForm({
+      paid_amount: String(remAmt > 0 ? remAmt : billAmt),
+      paid_units: String(remUnits > 0 ? remUnits : billedUnits),
+      payment_date: new Date().toISOString().split('T')[0],
+      payment_method: payment.payment_method || 'Online',
+      remarks: payment.remarks || '',
+      receipt_image: null,
+    });
+    setFormError(null);
+    setShowQuickPayModal(true);
+  };
+
+  // Handle Quick Pay Submit
+  const handleQuickPaySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!quickPayTarget) return;
+    setFormSubmitting(true);
+    setFormError(null);
+    try {
+      const formData = new FormData();
+      formData.append('paid_amount', quickPayForm.paid_amount);
+      formData.append('paid_units', quickPayForm.paid_units);
+      formData.append('payment_date', quickPayForm.payment_date);
+      formData.append('payment_method', quickPayForm.payment_method);
+      if (quickPayForm.remarks) formData.append('remarks', quickPayForm.remarks);
+      if (quickPayForm.receipt_image) formData.append('receipt_image', quickPayForm.receipt_image);
+
+      await api.electricity.payBill(quickPayTarget.id, formData);
+      setShowQuickPayModal(false);
+      setQuickPayTarget(null);
+      fetchData();
+    } catch (err: any) {
+      setFormError(err.message || 'Failed to mark bill as paid.');
+    } finally {
+      setFormSubmitting(false);
     }
   };
 
@@ -867,16 +939,30 @@ export const ElectricityMeter: React.FC = () => {
                             </div>
                           </td>
                           <td className="py-3 px-4 text-right">
-                            <div className="flex items-center justify-end gap-1">
-                              {hasPermission('electricity.payment.edit') && (
+                            <div className="flex items-center justify-end gap-1.5">
+                              {p.payment_status !== 'PAID' && (
                                 <button
-                                  onClick={() => openPaymentModal(undefined, p)}
-                                  className="p-1 text-slate-400 hover:text-indigo-600 rounded transition-colors cursor-pointer"
-                                  title="Edit Payment"
+                                  onClick={() => openQuickPayModal(p)}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold shadow-xs transition-colors cursor-pointer"
+                                  title="Mark Bill as Paid"
                                 >
-                                  <Edit2 className="w-3.5 h-3.5" />
+                                  <CheckCircle2 className="w-3.5 h-3.5" /> Pay
                                 </button>
                               )}
+                              <button
+                                onClick={() => openPaymentModal(undefined, p)}
+                                className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                                title="Edit Bill / Payment"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => handleDeletePayment(p)}
+                                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                                title="Delete Mistaken Bill / Payment"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
                             </div>
                           </td>
                         </tr>
@@ -1499,14 +1585,80 @@ export const ElectricityMeter: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-semibold text-slate-700">Payment Status *</label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const bAmt = paymentForm.bill_amount;
+                        const bUnits = paymentForm.billed_units;
+                        setPaymentForm(prev => ({
+                          ...prev,
+                          payment_status: 'PAID',
+                          paid_amount: bAmt || prev.paid_amount,
+                          paid_units: bUnits || prev.paid_units,
+                          payment_date: prev.payment_date || new Date().toISOString().split('T')[0],
+                        }));
+                      }}
+                      className="text-[10px] text-emerald-600 font-bold hover:underline cursor-pointer"
+                    >
+                      ✓ Mark Full Paid
+                    </button>
+                  </div>
+                  <select
+                    value={paymentForm.payment_status}
+                    onChange={(e) => {
+                      const nextStatus = e.target.value;
+                      if (nextStatus === 'PAID') {
+                        setPaymentForm(prev => ({
+                          ...prev,
+                          payment_status: 'PAID',
+                          paid_amount: prev.paid_amount && parseFloat(prev.paid_amount) > 0 ? prev.paid_amount : prev.bill_amount,
+                          paid_units: prev.paid_units && parseFloat(prev.paid_units) > 0 ? prev.paid_units : prev.billed_units,
+                          payment_date: prev.payment_date || new Date().toISOString().split('T')[0],
+                        }));
+                      } else {
+                        setPaymentForm(prev => ({ ...prev, payment_status: nextStatus }));
+                      }
+                    }}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                  >
+                    <option value="PAID">PAID (Settled)</option>
+                    <option value="UNPAID">UNPAID (Due)</option>
+                    <option value="PARTIALLY_PAID">PARTIALLY PAID</option>
+                    <option value="OVERDUE">OVERDUE</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Payment Date</label>
+                  <input
+                    type="date"
+                    value={paymentForm.payment_date}
+                    onChange={(e) => setPaymentForm({ ...paymentForm, payment_date: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none cursor-pointer"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Paid Amount (Rs)</label>
                   <input
                     type="number"
                     step="0.01"
                     value={paymentForm.paid_amount}
-                    onChange={(e) => setPaymentForm({ ...paymentForm, paid_amount: e.target.value })}
+                    onChange={(e) => {
+                      const pAmt = e.target.value;
+                      const bAmt = parseFloat(paymentForm.bill_amount || '0');
+                      const pNum = parseFloat(pAmt || '0');
+                      let st = paymentForm.payment_status;
+                      if (pNum >= bAmt && bAmt > 0) st = 'PAID';
+                      else if (pNum > 0) st = 'PARTIALLY_PAID';
+                      setPaymentForm({ ...paymentForm, paid_amount: pAmt, payment_status: st });
+                    }}
                     placeholder="e.g. 1500"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 font-medium focus:outline-none"
                   />
                 </div>
 
@@ -1633,6 +1785,159 @@ export const ElectricityMeter: React.FC = () => {
                 Close
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 6: QUICK RECORD PAYMENT / MARK AS PAID */}
+      {showQuickPayModal && quickPayTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div>
+                <h3 className="text-base font-bold text-slate-900 flex items-center gap-1.5">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                  Record Payment / Mark as Paid
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {quickPayTarget.branch_name} — {quickPayTarget.meter_name} ({quickPayTarget.meter_number})
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowQuickPayModal(false);
+                  setQuickPayTarget(null);
+                }}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {formError && (
+              <div className="mt-3 p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{formError}</span>
+              </div>
+            )}
+
+            {/* Bill Summary Banner */}
+            <div className="mt-4 p-3.5 bg-slate-50 border border-slate-200 rounded-xl grid grid-cols-3 gap-2 text-center text-xs">
+              <div>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Bill No</span>
+                <span className="font-mono font-bold text-slate-800">{quickPayTarget.bill_number || '—'}</span>
+              </div>
+              <div>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Billed</span>
+                <span className="font-bold text-slate-900">Rs. {Number(quickPayTarget.bill_amount || 0).toLocaleString()}</span>
+              </div>
+              <div>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Due Units</span>
+                <span className="font-bold text-rose-600">{quickPayTarget.due_units || 0} units</span>
+              </div>
+            </div>
+
+            <form onSubmit={handleQuickPaySubmit} className="mt-4 space-y-3.5">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Paid Amount (Rs) <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    value={quickPayForm.paid_amount}
+                    onChange={(e) => setQuickPayForm({ ...quickPayForm, paid_amount: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Paid Units</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={quickPayForm.paid_units}
+                    onChange={(e) => setQuickPayForm({ ...quickPayForm, paid_units: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Payment Date <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={quickPayForm.payment_date}
+                    onChange={(e) => setQuickPayForm({ ...quickPayForm, payment_date: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none cursor-pointer"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Payment Method</label>
+                  <select
+                    value={quickPayForm.payment_method}
+                    onChange={(e) => setQuickPayForm({ ...quickPayForm, payment_method: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none cursor-pointer"
+                  >
+                    <option value="Online">Online / eSewa / Khalti</option>
+                    <option value="Bank Transfer">Bank Transfer</option>
+                    <option value="Cash">Cash</option>
+                    <option value="Cheque">Cheque</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">Payment Receipt / Slip</label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    if (e.target.files?.[0]) setQuickPayForm({ ...quickPayForm, receipt_image: e.target.files[0] });
+                  }}
+                  className="w-full text-[11px] text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-[11px] file:font-semibold file:bg-emerald-50 file:text-emerald-700"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Remarks</label>
+                <input
+                  type="text"
+                  value={quickPayForm.remarks}
+                  onChange={(e) => setQuickPayForm({ ...quickPayForm, remarks: e.target.value })}
+                  placeholder="Optional payment reference or note"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowQuickPayModal(false);
+                    setQuickPayTarget(null);
+                  }}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={formSubmitting}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs disabled:opacity-60 cursor-pointer flex items-center gap-1.5"
+                >
+                  {formSubmitting ? 'Recording...' : '✓ Confirm & Mark as Paid'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
