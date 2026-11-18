@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { db } from '../models/database';
 import { authenticate, requireRoles, requirePermission, checkBranchAccess } from '../middleware/auth';
 import { logActivity } from '../middleware/audit';
@@ -479,7 +479,7 @@ router.post('/', authenticate, requirePermission('tasks.create'), async (req: Re
 });
 
 // PUT /api/tasks/:id - Edit task details and staff assignment
-router.put('/:id', authenticate, requirePermission('tasks.create'), async (req: Request, res: Response) => {
+router.put('/:id', authenticate, requirePermission('tasks.create', 'tasks.edit'), async (req: Request, res: Response) => {
   const taskId = parseInt(req.params.id, 10);
   const { title, description, category, priority, startDate, dueDate, branchId } = req.body;
 
@@ -644,12 +644,17 @@ router.put('/:id/status', authenticate, async (req: Request, res: Response) => {
     const current = curRes.rows[0];
 
     // Permission checks: allow any assigned staff in task_staff or primary assigned_to_id
-    if (req.user?.role === 'STAFF') {
+    const userRole = (req.user?.role || '').toUpperCase().replace(/\s+/g, '_');
+    const roleNameUpper = (req.user?.roleName || '').toUpperCase().replace(/\s+/g, '_');
+    const isSuperAdmin = userRole === 'SUPER_ADMIN' || roleNameUpper === 'SUPER_ADMIN' || req.user?.username === 'superadmin';
+    const isCentralLeadership = isSuperAdmin || ((userRole === 'MANAGEMENT' || roleNameUpper === 'MANAGEMENT') && (req.user?.allowedBranches === 'ALL' || req.user?.allowedBranches === '*'));
+
+    if (userRole === 'STAFF') {
       const staffCheck = await db.query(
         'SELECT 1 FROM task_staff WHERE task_id = $1 AND staff_id = $2',
-        [taskId, req.user.id]
+        [taskId, req.user!.id]
       );
-      const isAssigned = current.assigned_to_id === req.user.id || staffCheck.rowCount > 0;
+      const isAssigned = current.assigned_to_id === req.user!.id || staffCheck.rowCount > 0;
       if (!isAssigned) {
         return res.status(403).json({ success: false, message: 'Not authorized to update this task.' });
       }
@@ -658,8 +663,8 @@ router.put('/:id/status', authenticate, async (req: Request, res: Response) => {
       if (!staffAllowed.includes(status)) {
         return res.status(403).json({ success: false, message: `Staff cannot set status to ${status}.` });
       }
-    } else if (req.user?.role === 'BRANCH_MANAGER') {
-      if (!checkBranchAccess(req.user, current.branch_id)) {
+    } else if (!isCentralLeadership) {
+      if (!checkBranchAccess(req.user!, current.branch_id)) {
         return res.status(403).json({ success: false, message: 'Cannot modify tasks outside your branch.' });
       }
     }
@@ -720,11 +725,26 @@ router.put('/:id/status', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/tasks/:id/review - Review/Approve or Reject Completion (Admin/Management/Branch Manager)
+// POST /api/tasks/:id/review - Review/Approve or Reject Completion (Admin/Management/Branch Manager/Permitted Roles)
 router.post(
   '/:id/review',
   authenticate,
-  requireRoles('SUPER_ADMIN', 'MANAGEMENT', 'BRANCH_MANAGER'),
+  (req: Request, res: Response, next: NextFunction) => {
+    const isSuperAdmin =
+      req.user?.role === 'SUPER_ADMIN' ||
+      req.user?.roleName === 'Super Admin' ||
+      (req.user?.role && req.user.role.toUpperCase().replace(/\s+/g, '_') === 'SUPER_ADMIN') ||
+      req.user?.username === 'superadmin';
+    if (isSuperAdmin) return next();
+
+    const hasPerm =
+      Boolean(req.user?.permissions?.['tasks.complete']) ||
+      Boolean(req.user?.permissions?.['tasks.edit']) ||
+      Boolean(req.user?.permissions?.['tasks']);
+    if (hasPerm) return next();
+
+    return requireRoles('SUPER_ADMIN', 'MANAGEMENT', 'BRANCH_MANAGER')(req, res, next);
+  },
   async (req: Request, res: Response) => {
     const taskId = parseInt(req.params.id, 10);
     const { action, remarks } = req.body; // action: 'APPROVE' (Closed) or 'REJECT' (In Progress / Rejected)
@@ -812,8 +832,13 @@ router.post('/:id/reassign', authenticate, requirePermission('tasks.assign'), as
     const current = curRes.rows[0];
 
     // Branch tenancy validation
-    if (req.user?.role === 'BRANCH_MANAGER' && staffIds.length > 0) {
-      if (!checkBranchAccess(req.user, current.branch_id)) {
+    const userRole = (req.user?.role || '').toUpperCase().replace(/\s+/g, '_');
+    const roleNameUpper = (req.user?.roleName || '').toUpperCase().replace(/\s+/g, '_');
+    const isSuperAdmin = userRole === 'SUPER_ADMIN' || roleNameUpper === 'SUPER_ADMIN' || req.user?.username === 'superadmin';
+    const isCentralLeadership = isSuperAdmin || ((userRole === 'MANAGEMENT' || roleNameUpper === 'MANAGEMENT') && (req.user?.allowedBranches === 'ALL' || req.user?.allowedBranches === '*'));
+
+    if (!isCentralLeadership && staffIds.length > 0) {
+      if (!checkBranchAccess(req.user!, current.branch_id)) {
         return res.status(403).json({ success: false, message: 'Cannot reassign tasks outside your branch.' });
       }
       const validStaffRes = await db.query(

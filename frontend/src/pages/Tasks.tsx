@@ -30,7 +30,24 @@ import {
 } from '../components/common/DatePeriodFilter';
 
 export const Tasks: React.FC = () => {
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
+
+  const userRoleUpper = (user?.role || '').toUpperCase().replace(/\s+/g, '_');
+  const roleNameUpper = ((user as any)?.roleName || (user as any)?.role_name || '').toUpperCase().replace(/\s+/g, '_');
+  const userDept = ((user as any)?.departmentCode || (user as any)?.department_code || '').toUpperCase();
+  const isSuperAdmin = userRoleUpper === 'SUPER_ADMIN' || roleNameUpper === 'SUPER_ADMIN' || (user?.username || '').toLowerCase() === 'superadmin';
+  const isManagement = isSuperAdmin || userRoleUpper === 'MANAGEMENT' || roleNameUpper === 'MANAGEMENT' || userDept === 'EXEC' || userDept === 'OPS';
+  const isBranchScoped = Boolean(
+    (user?.branchId || user?.branch_id) &&
+    !isSuperAdmin &&
+    !isManagement &&
+    (user?.allowedBranches !== 'ALL' && (user as any)?.allowed_branches !== 'ALL')
+  );
+
+  // Dynamic role and RBAC permission checks
+  const canCreateTask = isSuperAdmin || hasPermission('tasks.create') || hasPermission('tasks') || ['SUPER_ADMIN', 'MANAGEMENT', 'BRANCH_MANAGER'].includes(user?.role || '');
+  const canAssignTask = isSuperAdmin || hasPermission('tasks.assign') || hasPermission('tasks.edit') || user?.role !== 'STAFF';
+  const canCompleteOrCloseTask = isSuperAdmin || hasPermission('tasks.complete') || hasPermission('tasks.edit') || ['SUPER_ADMIN', 'MANAGEMENT', 'BRANCH_MANAGER'].includes(user?.role || '');
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -335,7 +352,7 @@ export const Tasks: React.FC = () => {
           </p>
         </div>
 
-        {['SUPER_ADMIN', 'MANAGEMENT', 'BRANCH_MANAGER'].includes(user?.role || '') && (
+        {canCreateTask && (
           <button
             onClick={openCreateTaskModal}
             className="px-4 py-2 bg-brand-600 text-white font-bold text-xs rounded-xl hover:bg-brand-700 shadow-sm flex items-center gap-1.5 transition-colors cursor-pointer"
@@ -400,7 +417,7 @@ export const Tasks: React.FC = () => {
             <option value="Low">Low</option>
           </select>
 
-          {user?.role !== 'BRANCH_MANAGER' && user?.role !== 'STAFF' && (
+          {!isBranchScoped && (
             <select
               value={branchFilter}
               onChange={e => setBranchFilter(e.target.value)}
@@ -542,7 +559,7 @@ export const Tasks: React.FC = () => {
                   <Users className="w-3.5 h-3.5 text-brand-600" />
                   Assigned Operations Team ({selectedTask.assigned_staff?.length || (selectedTask.assigned_to_name ? 1 : 0)})
                 </h4>
-                {user?.role !== 'STAFF' && selectedTask.status !== 'Closed' && (
+                {canAssignTask && selectedTask.status !== 'Closed' && (
                   <button
                     type="button"
                     onClick={() => openReassignModal(selectedTask)}
@@ -661,7 +678,7 @@ export const Tasks: React.FC = () => {
                 )}
 
                 {/* Manager / Admin Review actions */}
-                {selectedTask.status === 'Completed' && user?.role !== 'STAFF' && (
+                {selectedTask.status === 'Completed' && canCompleteOrCloseTask && (
                   <button
                     onClick={() => setShowReviewModal(true)}
                     className="px-3.5 py-1.5 bg-purple-600 text-white font-bold text-xs rounded-lg hover:bg-purple-700"
@@ -671,7 +688,7 @@ export const Tasks: React.FC = () => {
                 )}
 
                 {/* Reassign action */}
-                {user?.role !== 'STAFF' && selectedTask.status !== 'Closed' && (
+                {canAssignTask && selectedTask.status !== 'Closed' && (
                   <button
                     onClick={() => openReassignModal(selectedTask)}
                     className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 font-bold text-xs rounded-lg hover:bg-slate-50"
@@ -910,6 +927,7 @@ export const Tasks: React.FC = () => {
               <select
                 required
                 value={createForm.branchId}
+                disabled={isBranchScoped && Boolean(user?.branchId || user?.branch_id)}
                 onChange={e => {
                   const newBranchId = e.target.value;
                   setCreateForm({
@@ -921,7 +939,9 @@ export const Tasks: React.FC = () => {
                     }),
                   });
                 }}
-                className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2"
+                className={`w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 ${
+                  isBranchScoped && Boolean(user?.branchId || user?.branch_id) ? 'opacity-80 cursor-not-allowed bg-slate-100' : ''
+                }`}
               >
                 <option value="">Select Branch</option>
                 {branches.map(b => (

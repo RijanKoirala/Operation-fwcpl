@@ -232,17 +232,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
     userDept !== 'NOC'
   );
 
+  const isSuperAdminRole =
+    userRole === 'SUPER_ADMIN' ||
+    roleNameUpper === 'SUPER_ADMIN' ||
+    (user?.username || '').toLowerCase() === 'superadmin';
+
   const filteredNav = navItems.filter(item => {
     if ((item as any).branchHidden && isBranchScoped) {
       return false;
     }
-    const roleAllowed = item.allowedRoles.map(r => r.toUpperCase().replace(/\s+/g, '_')).includes(userRole);
-    if (!roleAllowed) return false;
 
+    if (isSuperAdminRole) return true;
+
+    // Special handling for accounts module
     if (item.path === 'accounts') {
-      const isSuperAdminRole =
-        userRole === 'SUPER_ADMIN' || roleNameUpper === 'SUPER_ADMIN' || (user?.username || '').toLowerCase() === 'superadmin';
-      if (isSuperAdminRole) return true;
       return (
         hasPermission('accounts.dashboard') ||
         hasPermission('accounts.view') ||
@@ -251,18 +254,36 @@ export const Sidebar: React.FC<SidebarProps> = ({
       );
     }
 
-    if (item.permissionKey && !hasPermission(item.permissionKey)) {
+    // Settings is restricted strictly to Super Admin
+    if (item.path === 'settings') {
+      return false;
+    }
+
+    const roleAllowed = item.allowedRoles.map(r => r.toUpperCase().replace(/\s+/g, '_')).includes(userRole);
+
+    // If item has a permissionKey: RBAC permission check is the source of truth
+    if (item.permissionKey) {
+      if (hasPermission(item.permissionKey)) {
+        return true;
+      }
+      // Legacy fallback for specific modules without strict DB permissions requirement
       if (
         item.permissionKey === 'electricity' ||
         item.permissionKey === 'information' ||
         item.permissionKey === 'assets.view' ||
         item.permissionKey === 'assets'
       ) {
-        return true;
+        return roleAllowed || Boolean(user?.roleId || (user as any)?.role_id);
       }
       return false;
     }
-    return true;
+
+    // Common nav items without permission keys (Dashboard, Notifications, Profile)
+    if (['dashboard', 'notifications', 'profile'].includes(item.path)) {
+      return true;
+    }
+
+    return roleAllowed;
   });
 
   return (
