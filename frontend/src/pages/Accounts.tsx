@@ -100,7 +100,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
   const hasRevenueView = isSuperAdmin || hasPermission('accounts.revenue.view') || hasPermission('accounts');
   const hasRevenueCreate = isSuperAdmin || hasPermission('accounts.revenue.create') || hasPermission('accounts');
   const hasRevenueEdit = isSuperAdmin || hasPermission('accounts.revenue.edit') || hasPermission('accounts');
-  const hasDepositsView = isSuperAdmin || hasPermission('accounts.deposits.view');
+  const hasDepositsView = isSuperAdmin || hasPermission('accounts.deposits.view') || hasRevenueView;
   const hasBanksView = isSuperAdmin || hasPermission('accounts.banks.view');
   const hasReportsView = isSuperAdmin || hasPermission('accounts.reports.view');
   const hasExport = isSuperAdmin || hasPermission('accounts.export');
@@ -108,16 +108,24 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
   const userBranchId = user?.branchId || (user as any)?.branch_id;
   const userBranchName = user?.branchName || (user as any)?.branch_name || 'My Branch';
 
-  // Navigation tab state
+  // Navigation tab state: Super Admin defaults to dashboard or initialTab; Branch user defaults to revenue
   const [activeTab, setActiveTab] = useState<'dashboard' | 'revenue' | 'deposits' | 'banks' | 'reports'>(() => {
-    if (!isSuperAdmin) return 'revenue';
-    return initialTab;
+    if (!isSuperAdmin) {
+      return initialTab === 'deposits' ? 'deposits' : 'revenue';
+    }
+    return initialTab || 'dashboard';
   });
 
   // Keep active tab in sync if initialTab changes
   useEffect(() => {
-    if (isSuperAdmin && initialTab) {
-      setActiveTab(initialTab);
+    if (initialTab) {
+      if (!isSuperAdmin) {
+        if (initialTab === 'deposits' || initialTab === 'revenue') {
+          setActiveTab(initialTab);
+        }
+      } else {
+        setActiveTab(initialTab);
+      }
     }
   }, [initialTab, isSuperAdmin]);
 
@@ -139,9 +147,9 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
     const fetchBranches = async () => {
       try {
         const res = await api.get('/branches');
-        if (res.success && Array.isArray(res.data)) {
+        if (res && res.success && Array.isArray(res.data)) {
           setBranches(res.data);
-        } else if (Array.isArray(res.branches)) {
+        } else if (res && Array.isArray(res.branches)) {
           setBranches(res.branches);
         }
       } catch (err) {
@@ -156,8 +164,14 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
   const fetchActiveAccounts = async () => {
     try {
       const res = await api.accounts.getActiveAccounts();
-      if (res.success && Array.isArray(res.accounts)) {
-        setActiveAccounts(res.accounts);
+      if (res && res.success && Array.isArray(res.accounts)) {
+        setActiveAccounts(
+          res.accounts.map((a: any) => ({
+            ...a,
+            accountName: a.accountName || a.account_name,
+            accountType: a.accountType || a.account_type,
+          }))
+        );
       }
     } catch (err) {
       console.warn('Failed to load active bank accounts:', err);
@@ -224,8 +238,8 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
         params.endDate = dashEndDate;
       }
       const res = await api.accounts.getDashboard(params);
-      if (res.success) {
-        setDashCards(res.summaryCards);
+      if (res && res.success) {
+        setDashCards(res.summaryCards || {});
         setDashBranchSummary(res.branchesSummary || []);
       }
     } catch (err: any) {
@@ -289,7 +303,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
       if (revEndDate) params.endDate = revEndDate;
 
       const res = await api.accounts.getRevenues(params);
-      if (res.success) {
+      if (res && res.success) {
         setRevenues(res.revenues || []);
         setRevTotalPages(res.pagination?.totalPages || 1);
         setRevTotalCount(res.pagination?.total || 0);
@@ -324,7 +338,6 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
     setRevPage(1);
   };
 
-  // Jump from Dashboard to Revenue for specific branch
   const handleJumpToBranchRevenue = (bId: number) => {
     if (!isSuperAdmin) return;
     setRevBranchFilter(String(bId));
@@ -338,7 +351,9 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
   const [depCards, setDepCards] = useState<any>({
     totalCashCollected: 0,
     totalUndepositedCash: 0,
+    undepositedCash: 0,
     totalDepositedCash: 0,
+    depositedCash: 0,
     todayDeposits: 0,
     undepositedCollectionsCount: 0,
   });
@@ -355,21 +370,30 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
     setDepLoading(true);
     try {
       const summaryRes = await api.accounts.getDepositsSummary({
-        branchId: depBranchFilter,
+        branchId: isSuperAdmin ? depBranchFilter : userBranchId,
       });
-      if (summaryRes.success) {
-        setDepCards(summaryRes.summaryCards);
+      if (summaryRes && summaryRes.success) {
+        const cards = summaryRes.summaryCards || summaryRes.summary || {};
+        setDepCards({
+          totalCashCollected: Number(cards.totalCashCollected || 0),
+          totalUndepositedCash: Number(cards.totalUndepositedCash ?? cards.undepositedCash ?? 0),
+          undepositedCash: Number(cards.undepositedCash ?? cards.totalUndepositedCash ?? 0),
+          totalDepositedCash: Number(cards.totalDepositedCash ?? cards.depositedCash ?? 0),
+          depositedCash: Number(cards.depositedCash ?? cards.totalDepositedCash ?? 0),
+          todayDeposits: Number(cards.todayDeposits || 0),
+          undepositedCollectionsCount: Number(cards.undepositedCollectionsCount || 0),
+        });
       }
 
       const params: any = {
         page,
         limit: 20,
-        branchId: depBranchFilter,
+        branchId: isSuperAdmin ? depBranchFilter : userBranchId,
         depositStatus: depStatusFilter,
         search: depSearch.trim(),
       };
       const collRes = await api.accounts.getDepositCollections(params);
-      if (collRes.success) {
+      if (collRes && collRes.success) {
         setDepCollections(collRes.collections || []);
         setDepTotalPages(collRes.pagination?.totalPages || 1);
         setDepTotalCount(collRes.pagination?.total || 0);
@@ -387,7 +411,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
     }
   }, [activeTab, depPage, depBranchFilter, depStatusFilter]);
 
-  // Deposit Allocation Modal State
+  // Deposit Modal State (Used both from Deposits tab AND Revenue table)
   const [showDepositModal, setShowDepositModal] = useState(false);
   const [targetCollection, setTargetCollection] = useState<CashDepositCollectionQueueItem | null>(null);
   const [depAllocDate, setDepAllocDate] = useState(getTodayInputStr());
@@ -399,17 +423,36 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
   const [depSaving, setDepSaving] = useState(false);
   const [depError, setDepError] = useState<string | null>(null);
 
-  const openDepositModal = (coll: CashDepositCollectionQueueItem) => {
-    setTargetCollection(coll);
+  const openDepositModal = (coll: CashDepositCollectionQueueItem | BranchRevenue) => {
+    const amt = Number(coll.amount || 0);
+    const depAmt = Number(coll.depositedAmount || 0);
+    const rem = coll.remainingAmount !== undefined ? Number(coll.remainingAmount) : Math.max(0, amt - depAmt);
+
+    const normColl: CashDepositCollectionQueueItem = {
+      id: coll.id,
+      revenueCode: coll.revenueCode || `REV-${String(coll.id).padStart(5, '0')}`,
+      revenueDate: coll.revenueDate,
+      branchId: coll.branchId,
+      branchName: coll.branchName,
+      amount: amt,
+      depositedAmount: depAmt,
+      remainingAmount: rem,
+      depositStatus: (coll as any).depositStatus || 'Undeposited',
+      remarks: coll.remarks,
+      createdByName: coll.createdByName,
+      createdAt: (coll as any).createdAt || '',
+    };
+
+    setTargetCollection(normColl);
     setDepAllocDate(getTodayInputStr());
     setDepAllocRef('');
     setDepAllocRemarks('');
-    // Default 1 allocation with remaining amount pre-filled if only 1 account
-    const firstAcc = activeAccounts.find(a => a.accountType === 'BANK') || activeAccounts[0];
+
+    const firstBank = activeAccounts.find(a => a.accountType === 'BANK') || activeAccounts[0];
     setAllocations([
       {
-        accountId: firstAcc ? String(firstAcc.id) : '',
-        amount: String(coll.remainingAmount),
+        accountId: firstBank ? String(firstBank.id) : '',
+        amount: String(rem > 0 ? rem : amt),
       },
     ]);
     setDepError(null);
@@ -448,14 +491,13 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
       setDepError('Total deposit amount must be greater than zero.');
       return;
     }
-    if (totalAllocatedAmount > targetCollection.remainingAmount) {
+    if (totalAllocatedAmount > targetCollection.remainingAmount + 0.001) {
       setDepError(
         `Total allocated (Rs. ${totalAllocatedAmount.toLocaleString()}) cannot exceed remaining cash (Rs. ${targetCollection.remainingAmount.toLocaleString()}).`
       );
       return;
     }
 
-    // Validate account selections
     for (let i = 0; i < allocations.length; i++) {
       const a = allocations[i];
       if (!a.accountId) {
@@ -482,13 +524,17 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
         referenceNo: depAllocRef.trim(),
         remarks: depAllocRemarks.trim(),
       });
-      if (res.success) {
+      if (res && res.success) {
         setShowDepositModal(false);
         fetchDepositsData(depPage);
+        fetchRevenues(revPage);
         fetchActiveAccounts();
-        if (isSuperAdmin) fetchDashboardData();
+        if (isSuperAdmin) {
+          fetchDashboardData();
+          fetchBanksData();
+        }
       } else {
-        setDepError(res.message || 'Failed to save deposit.');
+        setDepError(res?.message || 'Failed to save deposit.');
       }
     } catch (err: any) {
       setDepError(err.message || 'Error saving deposit.');
@@ -519,7 +565,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
     setBankLoading(true);
     try {
       const res = await api.accounts.getBanks();
-      if (res.success) {
+      if (res && res.success) {
         setBankCards(res.summaryCards || {});
         setBankAccounts(res.accounts || []);
       }
@@ -541,7 +587,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
     setAccountTxLoading(true);
     try {
       const res = await api.accounts.getBankById(account.id, { limit: 100 });
-      if (res.success) {
+      if (res && res.success) {
         setAccountTransactions(res.transactions || []);
       }
     } catch (err) {
@@ -585,17 +631,72 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
         openingBalance: openBal,
         remarks: newAccRemarks.trim(),
       });
-      if (res.success) {
+      if (res && res.success) {
         setShowAddBankModal(false);
         fetchBanksData();
         fetchActiveAccounts();
       } else {
-        setNewAccError(res.message || 'Failed to create account.');
+        setNewAccError(res?.message || 'Failed to create account.');
       }
     } catch (err: any) {
       setNewAccError(err.message || 'Error creating account.');
     } finally {
       setNewAccSaving(false);
+    }
+  };
+
+  // Opening Balance Modal State
+  const [showOpeningBalanceModal, setShowOpeningBalanceModal] = useState(false);
+  const [targetAccountForOpening, setTargetAccountForOpening] = useState<AccountItem | null>(null);
+  const [selectedAccountIdForOpening, setSelectedAccountIdForOpening] = useState<string>('');
+  const [openingBalanceInput, setOpeningBalanceInput] = useState<string>('0');
+  const [openingBalanceSaving, setOpeningBalanceSaving] = useState(false);
+  const [openingBalanceError, setOpeningBalanceError] = useState<string | null>(null);
+
+  const openOpeningBalanceModal = (acc?: AccountItem) => {
+    if (acc) {
+      setTargetAccountForOpening(acc);
+      setSelectedAccountIdForOpening(String(acc.id));
+      setOpeningBalanceInput(String(acc.openingBalance ?? 0));
+    } else {
+      const first = bankAccounts[0] || activeAccounts[0];
+      setTargetAccountForOpening(first || null);
+      setSelectedAccountIdForOpening(first ? String(first.id) : '');
+      setOpeningBalanceInput(first ? String(first.openingBalance ?? 0) : '0');
+    }
+    setOpeningBalanceError(null);
+    setShowOpeningBalanceModal(true);
+  };
+
+  const handleSaveOpeningBalance = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const accId = parseInt(selectedAccountIdForOpening, 10);
+    if (!accId) {
+      setOpeningBalanceError('Please select an account.');
+      return;
+    }
+    const val = parseFloat(openingBalanceInput);
+    if (isNaN(val) || val < 0) {
+      setOpeningBalanceError('Opening balance must be 0 or positive.');
+      return;
+    }
+
+    setOpeningBalanceSaving(true);
+    setOpeningBalanceError(null);
+    try {
+      const res = await api.accounts.updateOpeningBalance(accId, { openingBalance: val });
+      if (res && res.success) {
+        setShowOpeningBalanceModal(false);
+        fetchBanksData();
+        fetchActiveAccounts();
+        if (isSuperAdmin) fetchDashboardData();
+      } else {
+        setOpeningBalanceError(res?.message || 'Failed to update opening balance.');
+      }
+    } catch (err: any) {
+      setOpeningBalanceError(err.message || 'Error updating opening balance.');
+    } finally {
+      setOpeningBalanceSaving(false);
     }
   };
 
@@ -612,7 +713,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
   const [expError, setExpError] = useState<string | null>(null);
 
   const openExpenseModal = () => {
-    setExpAccountId(bankAccounts[0] ? String(bankAccounts[0].id) : '');
+    setExpAccountId(bankAccounts[0] ? String(bankAccounts[0].id) : (activeAccounts[0] ? String(activeAccounts[0].id) : ''));
     setExpAmount('');
     setExpCategory('Office Supplies');
     setExpPaidTo('');
@@ -651,7 +752,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
         referenceNo: expRefNo.trim(),
         remarks: expRemarks.trim(),
       });
-      if (res.success) {
+      if (res && res.success) {
         setShowExpenseModal(false);
         fetchBanksData();
         fetchActiveAccounts();
@@ -659,7 +760,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
           handleSelectAccountForLedger(selectedAccount);
         }
       } else {
-        setExpError(res.message || 'Failed to record expense.');
+        setExpError(res?.message || 'Failed to record expense.');
       }
     } catch (err: any) {
       setExpError(err.message || 'Error recording expense.');
@@ -714,12 +815,12 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
         transferDate: trDate,
         remarks: trRemarks.trim(),
       });
-      if (res.success) {
+      if (res && res.success) {
         setShowTransferModal(false);
         fetchBanksData();
         fetchActiveAccounts();
       } else {
-        setTrError(res.message || 'Failed to record transfer.');
+        setTrError(res?.message || 'Failed to record transfer.');
       }
     } catch (err: any) {
       setTrError(err.message || 'Error executing transfer.');
@@ -738,7 +839,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
     setReconLoading(true);
     try {
       const res = await api.accounts.getReconciliation();
-      if (res.success) {
+      if (res && res.success) {
         setReconData(res.reconciliation);
       }
     } catch (err) {
@@ -781,8 +882,8 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
         params.endDate = repEndDate;
       }
       const res = await api.accounts.getReports(params);
-      if (res.success) {
-        setRepMetrics(res.metrics);
+      if (res && res.success) {
+        setRepMetrics(res.metrics || {});
         setRepTrend(res.trend || []);
         setRepBranchComparison(res.branchComparison || []);
       }
@@ -839,7 +940,6 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
     setAddDate(getTodayInputStr());
     setAddAmount('');
     setAddCollectionType('CASH');
-    // Pre-select first bank/wallet for online
     const firstBank = activeAccounts.find(a => a.accountType !== 'CASH') || activeAccounts[0];
     setAddReceivedAccountId(firstBank ? String(firstBank.id) : '');
     setAddRemarks('');
@@ -882,13 +982,13 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
       }
 
       const res = await api.accounts.createRevenue(payload);
-      if (res.success) {
+      if (res && res.success) {
         setShowAddModal(false);
         if (activeTab === 'revenue') fetchRevenues(1);
         if (isSuperAdmin) fetchDashboardData();
         fetchActiveAccounts();
       } else {
-        setAddError(res.message || 'Failed to save revenue.');
+        setAddError(res?.message || 'Failed to save revenue.');
       }
     } catch (err: any) {
       setAddError(err.message || 'Error saving revenue.');
@@ -942,13 +1042,13 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
         revenueDate: editDate,
         remarks: editRemarks.trim(),
       });
-      if (res.success) {
+      if (res && res.success) {
         setShowEditModal(false);
         fetchRevenues(revPage);
         if (isSuperAdmin) fetchDashboardData();
         fetchActiveAccounts();
       } else {
-        setEditError(res.message || 'Failed to update revenue.');
+        setEditError(res?.message || 'Failed to update revenue.');
       }
     } catch (err: any) {
       setEditError(err.message || 'Error updating revenue.');
@@ -974,13 +1074,13 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
     setVoidSaving(true);
     try {
       const res = await api.accounts.voidRevenue(voidingEntry.id, { reason: voidReason.trim() });
-      if (res.success) {
+      if (res && res.success) {
         setShowVoidModal(false);
         fetchRevenues(revPage);
         if (isSuperAdmin) fetchDashboardData();
         fetchActiveAccounts();
       } else {
-        alert(res.message || 'Failed to void entry.');
+        alert(res?.message || 'Failed to void entry.');
       }
     } catch (err: any) {
       alert(err.message || 'Error voiding entry.');
@@ -1001,7 +1101,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
     setHistoryLoading(true);
     try {
       const res = await api.accounts.getRevenueById(entry.id);
-      if (res.success) {
+      if (res && res.success) {
         setHistoryEntry(res.revenue);
         setHistoryList(res.history || []);
       }
@@ -1031,7 +1131,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
               <p className="text-xs text-slate-500 font-medium mt-0.5">
                 {isSuperAdmin
                   ? 'Manage branch revenues, cash deposits, bank accounts & wallets, expenses and real-time ledger balances'
-                  : `Record daily revenue collections and view branch financial history for ${userBranchName}`}
+                  : `Record daily revenue collections, deposit cash to banks, and track financial history for ${userBranchName}`}
               </p>
             </div>
           </div>
@@ -1039,6 +1139,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
 
         {/* Sub-tab pills */}
         <div className="flex items-center gap-2 flex-wrap">
+          {/* Sub-tabs for Super Admin */}
           {isSuperAdmin && (
             <div className="flex items-center p-1 bg-slate-100 rounded-xl border border-slate-200">
               <button
@@ -1073,7 +1174,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
               >
                 <Landmark className="w-3.5 h-3.5" />
                 Deposits
-                {dashCards.cashUndeposited > 0 && (
+                {Number(dashCards?.cashUndeposited || 0) > 0 && (
                   <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
                 )}
               </button>
@@ -1098,6 +1199,37 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
               >
                 <PieChartIcon className="w-3.5 h-3.5" />
                 Reports
+              </button>
+            </div>
+          )}
+
+          {/* Sub-tabs for Branch Users (Revenue & Deposits) */}
+          {!isSuperAdmin && (
+            <div className="flex items-center p-1 bg-slate-100 rounded-xl border border-slate-200">
+              <button
+                onClick={() => handleTabChange('revenue')}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                  activeTab === 'revenue'
+                    ? 'bg-white text-indigo-600 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Wallet className="w-3.5 h-3.5" />
+                Revenue Entry
+              </button>
+              <button
+                onClick={() => handleTabChange('deposits')}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                  activeTab === 'deposits'
+                    ? 'bg-white text-indigo-600 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Landmark className="w-3.5 h-3.5" />
+                Bank Deposits
+                {Number(depCards?.totalUndepositedCash || depCards?.undepositedCash || 0) > 0 && (
+                  <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                )}
               </button>
             </div>
           )}
@@ -1211,81 +1343,75 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
 
           {/* Revenue Summary Cards */}
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3.5">
-            {/* 1. Today */}
             <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs relative overflow-hidden">
               <div className="flex items-center justify-between text-slate-400 mb-1">
                 <span className="text-[11px] font-bold uppercase tracking-wider">Today</span>
                 <Clock className="w-4 h-4 text-indigo-500" />
               </div>
               <p className="text-lg font-black text-slate-900 tracking-tight">
-                Rs. {dashCards.today.toLocaleString()}
+                Rs. {Number(dashCards?.today || 0).toLocaleString()}
               </p>
               <div className="flex items-center gap-1 text-[10px] text-slate-500 mt-1">
-                <span className="text-amber-600 font-bold">C: {dashCards.todayCash.toLocaleString()}</span>
+                <span className="text-amber-600 font-bold">C: {Number(dashCards?.todayCash || 0).toLocaleString()}</span>
                 <span>•</span>
-                <span className="text-indigo-600 font-bold">O: {dashCards.todayOnline.toLocaleString()}</span>
+                <span className="text-indigo-600 font-bold">O: {Number(dashCards?.todayOnline || 0).toLocaleString()}</span>
               </div>
             </div>
 
-            {/* 2. Yesterday */}
             <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs relative overflow-hidden">
               <div className="flex items-center justify-between text-slate-400 mb-1">
                 <span className="text-[11px] font-bold uppercase tracking-wider">Yesterday</span>
                 <Calendar className="w-4 h-4 text-blue-500" />
               </div>
               <p className="text-lg font-black text-slate-900 tracking-tight">
-                Rs. {dashCards.yesterday.toLocaleString()}
+                Rs. {Number(dashCards?.yesterday || 0).toLocaleString()}
               </p>
               <span className="text-[10px] text-slate-400 block mt-1">Full Day Total</span>
             </div>
 
-            {/* 3. This Week */}
             <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs relative overflow-hidden">
               <div className="flex items-center justify-between text-slate-400 mb-1">
                 <span className="text-[11px] font-bold uppercase tracking-wider">This Week</span>
                 <TrendingUp className="w-4 h-4 text-cyan-500" />
               </div>
               <p className="text-lg font-black text-slate-900 tracking-tight">
-                Rs. {dashCards.thisWeek.toLocaleString()}
+                Rs. {Number(dashCards?.thisWeek || 0).toLocaleString()}
               </p>
               <span className="text-[10px] text-slate-400 block mt-1">Sun to Current</span>
             </div>
 
-            {/* 4. This Month */}
             <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs relative overflow-hidden">
               <div className="flex items-center justify-between text-slate-400 mb-1">
                 <span className="text-[11px] font-bold uppercase tracking-wider">This Month</span>
                 <Wallet className="w-4 h-4 text-emerald-500" />
               </div>
               <p className="text-lg font-black text-slate-900 tracking-tight">
-                Rs. {dashCards.thisMonth.toLocaleString()}
+                Rs. {Number(dashCards?.thisMonth || 0).toLocaleString()}
               </p>
               <span className="text-[10px] text-emerald-600 font-bold block mt-1">Current Month</span>
             </div>
 
-            {/* 5. This Year */}
             <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs relative overflow-hidden">
               <div className="flex items-center justify-between text-slate-400 mb-1">
                 <span className="text-[11px] font-bold uppercase tracking-wider">This Year</span>
                 <Building2 className="w-4 h-4 text-purple-500" />
               </div>
               <p className="text-lg font-black text-slate-900 tracking-tight">
-                Rs. {dashCards.thisYear.toLocaleString()}
+                Rs. {Number(dashCards?.thisYear || 0).toLocaleString()}
               </p>
               <span className="text-[10px] text-slate-400 block mt-1">YTD Collections</span>
             </div>
 
-            {/* 6. Selected Period */}
             <div className="bg-indigo-600 text-white p-4 rounded-2xl shadow-xs relative overflow-hidden">
               <div className="flex items-center justify-between text-indigo-200 mb-1">
-                <span className="text-[11px] font-bold uppercase tracking-wider">{dashCards.periodLabel}</span>
+                <span className="text-[11px] font-bold uppercase tracking-wider">{dashCards?.periodLabel || 'Selected Period'}</span>
                 <DollarSign className="w-4 h-4 text-indigo-200" />
               </div>
               <p className="text-lg font-black tracking-tight">
-                Rs. {dashCards.selectedPeriod.toLocaleString()}
+                Rs. {Number(dashCards?.selectedPeriod || 0).toLocaleString()}
               </p>
               <span className="text-[10px] text-indigo-200 block mt-1">
-                {dashCards.selectedEntries} Entries Recorded
+                {Number(dashCards?.selectedEntries || 0)} Entries Recorded
               </span>
             </div>
           </div>
@@ -1298,7 +1424,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                   Total Available Funds
                 </span>
                 <p className="text-xl font-black text-slate-900 mt-0.5">
-                  Rs. {dashCards.totalAvailableFunds.toLocaleString()}
+                  Rs. {Number(dashCards?.totalAvailableFunds || 0).toLocaleString()}
                 </p>
                 <span className="text-[10px] text-slate-500">Bank + Available Cash</span>
               </div>
@@ -1313,7 +1439,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                   Total Bank Balance
                 </span>
                 <p className="text-xl font-black text-indigo-600 mt-0.5">
-                  Rs. {dashCards.totalBankBalance.toLocaleString()}
+                  Rs. {Number(dashCards?.totalBankBalance || 0).toLocaleString()}
                 </p>
                 <span className="text-[10px] text-slate-500">Across all banks & digital wallets</span>
               </div>
@@ -1328,7 +1454,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                   Undeposited Cash
                 </span>
                 <p className="text-xl font-black text-amber-600 mt-0.5">
-                  Rs. {dashCards.cashUndeposited.toLocaleString()}
+                  Rs. {Number(dashCards?.cashUndeposited || 0).toLocaleString()}
                 </p>
                 <button
                   onClick={() => handleTabChange('deposits')}
@@ -1348,10 +1474,10 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                   Today's Deposits & Expenses
                 </span>
                 <p className="text-sm font-bold text-slate-800 mt-1">
-                  Deposited: <strong className="text-emerald-700">Rs. {dashCards.todayDeposits.toLocaleString()}</strong>
+                  Deposited: <strong className="text-emerald-700">Rs. {Number(dashCards?.todayDeposits || 0).toLocaleString()}</strong>
                 </p>
                 <p className="text-[11px] text-slate-500">
-                  Expenses: <strong className="text-rose-600">Rs. {dashCards.todayExpenses.toLocaleString()}</strong>
+                  Expenses: <strong className="text-rose-600">Rs. {Number(dashCards?.todayExpenses || 0).toLocaleString()}</strong>
                 </p>
               </div>
               <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold">
@@ -1420,7 +1546,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                     <th className="py-3 px-4 text-right">This Month</th>
                     <th className="py-3 px-4 text-right">This Year</th>
                     <th className="py-3 px-4 text-right">
-                      {dashCards.periodLabel}
+                      {dashCards?.periodLabel || 'Selected'}
                     </th>
                     <th className="py-3 px-4 text-center">Action</th>
                   </tr>
@@ -1445,19 +1571,19 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                           </div>
                         </td>
                         <td className="py-3 px-4 text-right font-black text-slate-900">
-                          Rs. {row.todayRevenue.toLocaleString()}
+                          Rs. {Number(row.todayRevenue || 0).toLocaleString()}
                         </td>
                         <td className="py-3 px-4 text-right text-slate-600">
-                          Rs. {row.yesterdayRevenue.toLocaleString()}
+                          Rs. {Number(row.yesterdayRevenue || 0).toLocaleString()}
                         </td>
                         <td className="py-3 px-4 text-right font-bold text-indigo-600">
-                          Rs. {row.monthRevenue.toLocaleString()}
+                          Rs. {Number(row.monthRevenue || 0).toLocaleString()}
                         </td>
                         <td className="py-3 px-4 text-right text-slate-800">
-                          Rs. {row.yearRevenue.toLocaleString()}
+                          Rs. {Number(row.yearRevenue || 0).toLocaleString()}
                         </td>
                         <td className="py-3 px-4 text-right font-black text-emerald-700 bg-emerald-50/30">
-                          Rs. {row.selectedRevenue.toLocaleString()}
+                          Rs. {Number(row.selectedRevenue || 0).toLocaleString()}
                         </td>
                         <td className="py-3 px-4 text-center">
                           <button
@@ -1587,7 +1713,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
             <div className="flex items-center justify-between text-xs text-slate-500 pt-1">
               <span>
                 Found <strong>{revTotalCount}</strong> entries • Total Filtered Amount:{' '}
-                <strong className="text-emerald-700 font-black">Rs. {revTotalAmount.toLocaleString()}</strong>
+                <strong className="text-emerald-700 font-black">Rs. {Number(revTotalAmount || 0).toLocaleString()}</strong>
               </span>
               <button
                 onClick={() => fetchRevenues(revPage)}
@@ -1612,7 +1738,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                     <th className="py-3.5 px-4 text-center">Deposit Status</th>
                     <th className="py-3.5 px-4">Remarks</th>
                     <th className="py-3.5 px-4">Entered By</th>
-                    <th className="py-3.5 px-4 text-center">Status</th>
+                    <th className="py-3.5 px-4 text-center">Status & Deposit Action</th>
                     <th className="py-3.5 px-4 text-right">Action</th>
                   </tr>
                 </thead>
@@ -1635,6 +1761,11 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                       const isVoided = entry.status === 'Voided';
                       const isCash = entry.collectionType === 'CASH';
                       const isOnline = entry.collectionType === 'ONLINE';
+
+                      const entryAmt = Number(entry.amount || 0);
+                      const depAmt = Number(entry.depositedAmount || 0);
+                      const remAmt = entry.remainingAmount !== undefined ? Number(entry.remainingAmount) : Math.max(0, entryAmt - depAmt);
+                      const isFullyDeposited = entry.depositStatus === 'Fully Deposited' || (depAmt >= entryAmt && entryAmt > 0);
 
                       return (
                         <tr
@@ -1685,7 +1816,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                                 isVoided ? 'text-slate-400 line-through' : 'text-emerald-700'
                               }`}
                             >
-                              Rs. {entry.amount.toLocaleString()}
+                              Rs. {entryAmt.toLocaleString()}
                             </span>
                           </td>
                           <td className="py-3.5 px-4 text-center whitespace-nowrap">
@@ -1695,12 +1826,12 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                               <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                                 Auto-Credited
                               </span>
-                            ) : entry.depositStatus === 'Fully Deposited' ? (
+                            ) : isFullyDeposited ? (
                               <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                                 Fully Deposited
                               </span>
-                            ) : entry.depositStatus === 'Partially Deposited' ? (
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200" title={`Deposited: Rs. ${entry.depositedAmount?.toLocaleString()} | Rem: Rs. ${entry.remainingAmount?.toLocaleString()}`}>
+                            ) : depAmt > 0 ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200" title={`Deposited: Rs. ${depAmt.toLocaleString()} | Rem: Rs. ${remAmt.toLocaleString()}`}>
                                 Partially Deposited
                               </span>
                             ) : (
@@ -1715,17 +1846,33 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                           <td className="py-3.5 px-4 whitespace-nowrap font-medium text-slate-700">
                             {entry.createdByName || 'Staff'}
                           </td>
+
+                          {/* Status & Deposit Action Column */}
                           <td className="py-3.5 px-4 text-center whitespace-nowrap">
                             {isVoided ? (
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                              <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
                                 Voided
                               </span>
-                            ) : (
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                Active
+                            ) : isOnline ? (
+                              <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 inline-flex items-center gap-1">
+                                <CheckCircle2 className="w-3 h-3 text-indigo-600" /> Auto-Credited
                               </span>
+                            ) : isFullyDeposited ? (
+                              <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 inline-flex items-center gap-1">
+                                <Check className="w-3 h-3 text-emerald-600" /> Deposited
+                              </span>
+                            ) : (
+                              <button
+                                onClick={() => openDepositModal(entry)}
+                                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs inline-flex items-center gap-1.5 transition-all cursor-pointer hover:shadow"
+                                title="Deposit this cash collection into a bank"
+                              >
+                                <Landmark className="w-3.5 h-3.5" />
+                                Deposit Now
+                              </button>
                             )}
                           </td>
+
                           <td className="py-3.5 px-4 text-right whitespace-nowrap">
                             <div className="flex items-center justify-end gap-1">
                               {/* Audit trail button */}
@@ -1797,7 +1944,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
       )}
 
       {/* ============================================================ */}
-      {/* VIEW 3: DEPOSITS TAB (Super Admin) */}
+      {/* VIEW 3: DEPOSITS TAB */}
       {/* ============================================================ */}
       {activeTab === 'deposits' && hasDepositsView && (
         <div className="space-y-6">
@@ -1808,7 +1955,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                 Total Cash Collected
               </span>
               <p className="text-xl font-black text-slate-900 mt-1">
-                Rs. {depCards.totalCashCollected.toLocaleString()}
+                Rs. {Number(depCards?.totalCashCollected || 0).toLocaleString()}
               </p>
               <span className="text-[10px] text-slate-500">All cash revenues to date</span>
             </div>
@@ -1819,11 +1966,11 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                   Undeposited Cash
                 </span>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
-                  {depCards.undepositedCollectionsCount} Pending
+                  {Number(depCards?.undepositedCollectionsCount || 0)} Pending
                 </span>
               </div>
               <p className="text-xl font-black text-amber-600 mt-1">
-                Rs. {depCards.totalUndepositedCash.toLocaleString()}
+                Rs. {Number(depCards?.totalUndepositedCash ?? depCards?.undepositedCash ?? 0).toLocaleString()}
               </p>
               <span className="text-[10px] text-amber-700">Available cash awaiting bank deposit</span>
             </div>
@@ -1833,7 +1980,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                 Deposited Cash
               </span>
               <p className="text-xl font-black text-emerald-700 mt-1">
-                Rs. {depCards.totalDepositedCash.toLocaleString()}
+                Rs. {Number(depCards?.totalDepositedCash ?? depCards?.depositedCash ?? 0).toLocaleString()}
               </p>
               <span className="text-[10px] text-slate-500">Successfully deposited into banks</span>
             </div>
@@ -1843,7 +1990,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                 Total Deposits Today
               </span>
               <p className="text-xl font-black text-indigo-600 mt-1">
-                Rs. {depCards.todayDeposits.toLocaleString()}
+                Rs. {Number(depCards?.todayDeposits || 0).toLocaleString()}
               </p>
               <span className="text-[10px] text-slate-500">Bank deposits processed today</span>
             </div>
@@ -1863,21 +2010,23 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                 />
               </div>
 
-              <select
-                value={depBranchFilter}
-                onChange={e => {
-                  setDepBranchFilter(e.target.value);
-                  setDepPage(1);
-                }}
-                className="text-xs border border-slate-300 rounded-xl px-3 py-1.5 bg-white font-medium"
-              >
-                <option value="ALL">All Branches</option>
-                {branches.map(b => (
-                  <option key={b.id} value={b.id}>
-                    {b.name}
-                  </option>
-                ))}
-              </select>
+              {isSuperAdmin && (
+                <select
+                  value={depBranchFilter}
+                  onChange={e => {
+                    setDepBranchFilter(e.target.value);
+                    setDepPage(1);
+                  }}
+                  className="text-xs border border-slate-300 rounded-xl px-3 py-1.5 bg-white font-medium"
+                >
+                  <option value="ALL">All Branches</option>
+                  {branches.map(b => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+              )}
 
               <select
                 value={depStatusFilter}
@@ -1945,7 +2094,11 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                     </tr>
                   ) : (
                     depCollections.map(coll => {
-                      const isFullyDep = coll.depositStatus === 'Fully Deposited';
+                      const collAmt = Number(coll.amount || 0);
+                      const collDepAmt = Number(coll.depositedAmount || 0);
+                      const collRemAmt = Number(coll.remainingAmount || 0);
+                      const isFullyDep = coll.depositStatus === 'Fully Deposited' || collRemAmt <= 0;
+
                       return (
                         <tr key={coll.id} className="hover:bg-slate-50/60 transition-colors">
                           <td className="py-3.5 px-4 font-mono font-bold text-slate-900">
@@ -1964,13 +2117,13 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                             </div>
                           </td>
                           <td className="py-3.5 px-4 text-right font-black text-slate-900">
-                            Rs. {coll.amount.toLocaleString()}
+                            Rs. {collAmt.toLocaleString()}
                           </td>
                           <td className="py-3.5 px-4 text-right font-bold text-emerald-700">
-                            Rs. {coll.depositedAmount.toLocaleString()}
+                            Rs. {collDepAmt.toLocaleString()}
                           </td>
                           <td className="py-3.5 px-4 text-right font-black text-amber-600 bg-amber-50/20">
-                            Rs. {coll.remainingAmount.toLocaleString()}
+                            Rs. {collRemAmt.toLocaleString()}
                           </td>
                           <td className="py-3.5 px-4 text-center">
                             {isFullyDep ? (
@@ -2052,6 +2205,14 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
 
             <div className="flex items-center gap-2 flex-wrap">
               <button
+                onClick={() => openOpeningBalanceModal()}
+                className="px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold text-xs rounded-xl border border-amber-300 flex items-center gap-1.5 cursor-pointer transition-colors shadow-2xs"
+                title="Set actual starting opening balance for banks so live figures are accurate"
+              >
+                <Sliders className="w-3.5 h-3.5 text-amber-600" />
+                + Set Opening Balance
+              </button>
+              <button
                 onClick={openExpenseModal}
                 className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs rounded-xl border border-rose-200 flex items-center gap-1.5 cursor-pointer transition-colors"
               >
@@ -2099,7 +2260,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                 Total Available Funds
               </span>
               <p className="text-lg font-black text-slate-900 mt-1">
-                Rs. {bankCards.totalAvailableFunds.toLocaleString()}
+                Rs. {Number(bankCards?.totalAvailableFunds || 0).toLocaleString()}
               </p>
               <span className="text-[10px] text-emerald-600 font-bold">Total Liquid Balance</span>
             </div>
@@ -2109,7 +2270,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                 Bank Balance
               </span>
               <p className="text-lg font-black text-indigo-600 mt-1">
-                Rs. {bankCards.totalBankBalance.toLocaleString()}
+                Rs. {Number(bankCards?.totalBankBalance || 0).toLocaleString()}
               </p>
               <span className="text-[10px] text-slate-500">Commercial Banks & Wallets</span>
             </div>
@@ -2119,7 +2280,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                 Cash Balance
               </span>
               <p className="text-lg font-black text-amber-600 mt-1">
-                Rs. {bankCards.totalCashBalance.toLocaleString()}
+                Rs. {Number(bankCards?.totalCashBalance || 0).toLocaleString()}
               </p>
               <span className="text-[10px] text-slate-500">Undeposited Collection</span>
             </div>
@@ -2129,7 +2290,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                 Online Collection
               </span>
               <p className="text-lg font-black text-cyan-600 mt-1">
-                Rs. {bankCards.totalOnlineCollection.toLocaleString()}
+                Rs. {Number(bankCards?.totalOnlineCollection || 0).toLocaleString()}
               </p>
               <span className="text-[10px] text-slate-500">Credited Directly</span>
             </div>
@@ -2139,7 +2300,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                 Cash Deposited
               </span>
               <p className="text-lg font-black text-emerald-700 mt-1">
-                Rs. {bankCards.totalCashDeposited.toLocaleString()}
+                Rs. {Number(bankCards?.totalCashDeposited || 0).toLocaleString()}
               </p>
               <span className="text-[10px] text-slate-500">Transferred Cash → Bank</span>
             </div>
@@ -2149,7 +2310,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                 Total Expenses
               </span>
               <p className="text-lg font-black text-rose-600 mt-1">
-                Rs. {bankCards.totalExpenses.toLocaleString()}
+                Rs. {Number(bankCards?.totalExpenses || 0).toLocaleString()}
               </p>
               <span className="text-[10px] text-slate-500">Debited From Accounts</span>
             </div>
@@ -2161,6 +2322,8 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
               const isSelected = selectedAccount?.id === acc.id;
               const isCash = acc.accountType === 'CASH';
               const isWallet = acc.accountType === 'DIGITAL_WALLET';
+              const curBal = Number(acc.currentBalance || 0);
+              const openBal = Number(acc.openingBalance || 0);
 
               return (
                 <div
@@ -2214,23 +2377,40 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                     <div>
                       <span className="text-[10px] font-bold text-slate-400 uppercase">Current Balance</span>
                       <p className="text-lg font-black text-slate-900">
-                        Rs. {acc.currentBalance.toLocaleString()}
+                        Rs. {curBal.toLocaleString()}
                       </p>
+                      <span className="text-[10px] text-slate-500 font-medium">
+                        Opening: Rs. {openBal.toLocaleString()}
+                      </span>
                     </div>
 
                     <div className="text-right text-[10px] text-slate-500 space-y-0.5">
                       <p>
-                        In: <strong className="text-emerald-700 font-bold">Rs. {acc.totalCredits.toLocaleString()}</strong>
+                        In: <strong className="text-emerald-700 font-bold">Rs. {Number(acc.totalCredits || 0).toLocaleString()}</strong>
                       </p>
                       <p>
-                        Out: <strong className="text-rose-600 font-bold">Rs. {acc.totalDebits.toLocaleString()}</strong>
+                        Out: <strong className="text-rose-600 font-bold">Rs. {Number(acc.totalDebits || 0).toLocaleString()}</strong>
                       </p>
                     </div>
                   </div>
 
-                  <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-indigo-600 font-bold">
-                    <span>View Transaction History →</span>
-                    <History className="w-3.5 h-3.5" />
+                  <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openOpeningBalanceModal(acc);
+                      }}
+                      className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold text-[11px] rounded-lg border border-amber-200 flex items-center gap-1 transition-colors cursor-pointer"
+                      title="Set / Adjust opening balance for this bank account"
+                    >
+                      <Sliders className="w-3 h-3 text-amber-600" />
+                      Set Opening Balance
+                    </button>
+
+                    <span className="text-[11px] text-indigo-600 font-bold flex items-center gap-1">
+                      View Ledger →
+                    </span>
                   </div>
                 </div>
               );
@@ -2250,17 +2430,26 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                       Transaction Ledger — {selectedAccount.accountName}
                     </h3>
                     <p className="text-xs text-slate-500 font-medium">
-                      Current balance: <strong className="text-slate-900">Rs. {selectedAccount.currentBalance.toLocaleString()}</strong> • Opening Balance: Rs. {selectedAccount.openingBalance.toLocaleString()}
+                      Current balance: <strong className="text-slate-900">Rs. {Number(selectedAccount.currentBalance || 0).toLocaleString()}</strong> • Opening Balance: Rs. {Number(selectedAccount.openingBalance || 0).toLocaleString()}
                     </p>
                   </div>
                 </div>
 
-                <button
-                  onClick={() => setSelectedAccount(null)}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer self-start md:self-auto"
-                >
-                  <X className="w-5 h-5" />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => openOpeningBalanceModal(selectedAccount)}
+                    className="px-3 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold text-xs rounded-lg border border-amber-200 flex items-center gap-1 cursor-pointer"
+                  >
+                    <Sliders className="w-3 h-3 text-amber-600" />
+                    Adjust Opening Balance
+                  </button>
+                  <button
+                    onClick={() => setSelectedAccount(null)}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
               </div>
 
               <div className="overflow-x-auto">
@@ -2293,8 +2482,8 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                       </tr>
                     ) : (
                       accountTransactions.map(tx => {
-                        const hasCredit = tx.creditAmount > 0;
-                        const hasDebit = tx.debitAmount > 0;
+                        const hasCredit = Number(tx.creditAmount || 0) > 0;
+                        const hasDebit = Number(tx.debitAmount || 0) > 0;
 
                         return (
                           <tr key={tx.id} className="hover:bg-slate-50/60 transition-colors">
@@ -2324,10 +2513,10 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                               {tx.branchName || '—'}
                             </td>
                             <td className="py-3 px-4 text-right whitespace-nowrap font-bold text-emerald-700">
-                              {hasCredit ? `+ Rs. ${tx.creditAmount.toLocaleString()}` : '—'}
+                              {hasCredit ? `+ Rs. ${Number(tx.creditAmount).toLocaleString()}` : '—'}
                             </td>
                             <td className="py-3 px-4 text-right whitespace-nowrap font-bold text-rose-600">
-                              {hasDebit ? `- Rs. ${tx.debitAmount.toLocaleString()}` : '—'}
+                              {hasDebit ? `- Rs. ${Number(tx.debitAmount).toLocaleString()}` : '—'}
                             </td>
                             <td className="py-3 px-4 text-right whitespace-nowrap font-black text-slate-900 bg-slate-50/50">
                               Rs. {Number(tx.balanceAfter || 0).toLocaleString()}
@@ -2431,42 +2620,42 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
             <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
               <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Total Collection</span>
               <p className="text-xl font-black text-slate-900 mt-1">
-                Rs. {repMetrics.totalRevenue.toLocaleString()}
+                Rs. {Number(repMetrics?.totalRevenue || 0).toLocaleString()}
               </p>
               <div className="text-[10px] text-slate-500 mt-1 flex items-center gap-1">
-                <span className="text-amber-600 font-bold">Cash: Rs. {repMetrics.totalCashCollection?.toLocaleString() || 0}</span>
+                <span className="text-amber-600 font-bold">Cash: Rs. {Number(repMetrics?.totalCashCollection || 0).toLocaleString()}</span>
                 <span>•</span>
-                <span className="text-indigo-600 font-bold">Online: Rs. {repMetrics.totalOnlineCollection?.toLocaleString() || 0}</span>
+                <span className="text-indigo-600 font-bold">Online: Rs. {Number(repMetrics?.totalOnlineCollection || 0).toLocaleString()}</span>
               </div>
             </div>
 
             <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
               <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Average Daily Collection</span>
               <p className="text-xl font-black text-indigo-600 mt-1">
-                Rs. {repMetrics.averageDaily.toLocaleString()}
+                Rs. {Number(repMetrics?.averageDaily || 0).toLocaleString()}
               </p>
               <span className="text-[10px] text-slate-500 block mt-1">
-                Calculated across {repMetrics.activeDays} active days
+                Calculated across {repMetrics?.activeDays || 0} active days
               </span>
             </div>
 
             <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
               <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Highest Branch</span>
               <p className="text-base font-black text-slate-900 mt-1 truncate">
-                {repMetrics.highestBranch?.name || '—'}
+                {repMetrics?.highestBranch?.name || '—'}
               </p>
               <span className="text-xs font-bold text-emerald-700 block">
-                {repMetrics.highestBranch ? `Rs. ${repMetrics.highestBranch.amount.toLocaleString()}` : '—'}
+                {repMetrics?.highestBranch ? `Rs. ${Number(repMetrics.highestBranch.amount || 0).toLocaleString()}` : '—'}
               </span>
             </div>
 
             <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
               <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Lowest Branch</span>
               <p className="text-base font-black text-slate-900 mt-1 truncate">
-                {repMetrics.lowestBranch?.name || '—'}
+                {repMetrics?.lowestBranch?.name || '—'}
               </p>
               <span className="text-xs font-bold text-slate-600 block">
-                {repMetrics.lowestBranch ? `Rs. ${repMetrics.lowestBranch.amount.toLocaleString()}` : '—'}
+                {repMetrics?.lowestBranch ? `Rs. ${Number(repMetrics.lowestBranch.amount || 0).toLocaleString()}` : '—'}
               </span>
             </div>
           </div>
@@ -2623,19 +2812,19 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                           </span>
                         </td>
                         <td className="py-3 px-4 text-right font-black text-slate-900">
-                          Rs. {row.totalAmount.toLocaleString()}
+                          Rs. {Number(row.totalAmount || 0).toLocaleString()}
                         </td>
                         <td className="py-3 px-4 text-right font-semibold text-indigo-600">
                           {row.percentage}%
                         </td>
                         <td className="py-3 px-4 text-right text-slate-600">
-                          {row.avgDaily > 0 ? `Rs. ${row.avgDaily.toLocaleString()}` : '—'}
+                          {row.avgDaily > 0 ? `Rs. ${Number(row.avgDaily).toLocaleString()}` : '—'}
                         </td>
                         <td className="py-3 px-4 text-right text-slate-700">
-                          {row.maxDaily > 0 ? `Rs. ${row.maxDaily.toLocaleString()}` : '—'}
+                          {row.maxDaily > 0 ? `Rs. ${Number(row.maxDaily).toLocaleString()}` : '—'}
                         </td>
                         <td className="py-3 px-4 text-right text-slate-500">
-                          {row.minDaily > 0 ? `Rs. ${row.minDaily.toLocaleString()}` : '—'}
+                          {row.minDaily > 0 ? `Rs. ${Number(row.minDaily).toLocaleString()}` : '—'}
                         </td>
                       </tr>
                     ))
@@ -2740,7 +2929,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                       {addCollectionType === 'CASH' && <Check className="w-4 h-4 text-amber-600" />}
                     </div>
                     <p className="text-[10px] text-slate-500">
-                      Increases cash balance. Queued for bank deposit.
+                      Increases cash balance. Ready to be deposited to banks.
                     </p>
                   </button>
 
@@ -2764,7 +2953,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                       {addCollectionType === 'ONLINE' && <Check className="w-4 h-4 text-indigo-600" />}
                     </div>
                     <p className="text-[10px] text-slate-500">
-                      Auto-credited to bank / digital wallet ledger.
+                      Auto-credited directly to bank / digital wallet ledger.
                     </p>
                   </button>
                 </div>
@@ -2876,14 +3065,14 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
       )}
 
       {/* ============================================================ */}
-      {/* MODAL 2: DEPOSIT MODAL (Split Across Multiple Banks) */}
+      {/* MODAL 2: DEPOSIT MODAL (Single Bank or Split Allocations) */}
       {/* ============================================================ */}
       {showDepositModal && targetCollection && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl max-w-xl w-full shadow-2xl border border-slate-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
             <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold">
+                <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold">
                   <Landmark className="w-5 h-5" />
                 </div>
                 <div>
@@ -2916,19 +3105,19 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                 <div>
                   <span className="text-[10px] text-slate-400 uppercase font-bold">Original Collection</span>
                   <p className="font-black text-slate-900 mt-0.5">
-                    Rs. {targetCollection.amount.toLocaleString()}
+                    Rs. {Number(targetCollection.amount || 0).toLocaleString()}
                   </p>
                 </div>
                 <div>
                   <span className="text-[10px] text-slate-400 uppercase font-bold">Already Deposited</span>
                   <p className="font-bold text-emerald-700 mt-0.5">
-                    Rs. {targetCollection.depositedAmount.toLocaleString()}
+                    Rs. {Number(targetCollection.depositedAmount || 0).toLocaleString()}
                   </p>
                 </div>
                 <div>
                   <span className="text-[10px] text-slate-400 uppercase font-bold">Remaining Cash</span>
                   <p className="font-black text-amber-600 mt-0.5">
-                    Rs. {targetCollection.remainingAmount.toLocaleString()}
+                    Rs. {Number(targetCollection.remainingAmount || 0).toLocaleString()}
                   </p>
                 </div>
               </div>
@@ -2945,7 +3134,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                     max={getTodayInputStr()}
                     onChange={e => setDepAllocDate(e.target.value)}
                     required
-                    className="w-full text-xs border border-slate-300 rounded-xl px-3 py-2 bg-white"
+                    className="w-full text-xs border border-slate-300 rounded-xl px-3 py-2 bg-white font-medium"
                   />
                 </div>
                 <div>
@@ -2964,7 +3153,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <label className="block text-xs font-bold text-slate-700">
-                    Deposit Allocation (Single or Split) <span className="text-rose-500">*</span>
+                    Deposit Destination (Bank Name & Amount) <span className="text-rose-500">*</span>
                   </label>
                   <button
                     type="button"
@@ -2972,7 +3161,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                     className="text-xs font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer"
                   >
                     <Plus className="w-3.5 h-3.5" />
-                    + Add Another Allocation
+                    + Split into another bank
                   </button>
                 </div>
 
@@ -2992,12 +3181,14 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                           required
                           className="w-full text-xs border border-slate-300 rounded-xl px-2.5 py-1.5 bg-white font-medium"
                         >
-                          <option value="">Select Destination Account...</option>
-                          {activeAccounts.map(a => (
-                            <option key={a.id} value={a.id}>
-                              {a.accountName} ({a.accountType})
-                            </option>
-                          ))}
+                          <option value="">Select Destination Bank...</option>
+                          {activeAccounts
+                            .filter(a => a.accountType !== 'CASH')
+                            .map(a => (
+                              <option key={a.id} value={a.id}>
+                                {a.accountName} ({a.accountType})
+                              </option>
+                            ))}
                         </select>
                       </div>
 
@@ -3080,7 +3271,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                 <button
                   type="submit"
                   disabled={depSaving}
-                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer disabled:opacity-50 flex items-center gap-2"
+                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer disabled:opacity-50 flex items-center gap-2"
                 >
                   {depSaving && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
                   <span>{depSaving ? 'Saving Deposit...' : 'Confirm Deposit'}</span>
@@ -3092,7 +3283,123 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
       )}
 
       {/* ============================================================ */}
-      {/* MODAL 3: ADD BANK / ACCOUNT */}
+      {/* MODAL 3: SET / ADJUST OPENING BALANCE */}
+      {/* ============================================================ */}
+      {showOpeningBalanceModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-slate-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold">
+                  <Sliders className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">Set Bank Opening Balance</h3>
+                  <p className="text-xs text-slate-500">Keep actual current bank amount accurate in system</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowOpeningBalanceModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveOpeningBalance} className="p-6 space-y-4">
+              {openingBalanceError && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{openingBalanceError}</span>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Select Bank / Account</label>
+                <select
+                  value={selectedAccountIdForOpening}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setSelectedAccountIdForOpening(val);
+                    const found = bankAccounts.find(a => String(a.id) === val);
+                    if (found) {
+                      setTargetAccountForOpening(found);
+                      setOpeningBalanceInput(String(found.openingBalance ?? 0));
+                    }
+                  }}
+                  required
+                  className="w-full text-xs border border-slate-300 rounded-xl px-3 py-2 bg-white font-medium"
+                >
+                  <option value="">Select Account...</option>
+                  {bankAccounts.map(a => (
+                    <option key={a.id} value={a.id}>
+                      {a.accountName} ({a.accountType}) — Current: Rs. {Number(a.currentBalance || 0).toLocaleString()}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {targetAccountForOpening && (
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl grid grid-cols-2 gap-2 text-xs">
+                  <div>
+                    <span className="text-slate-400 text-[10px] font-bold uppercase">Current Opening Bal</span>
+                    <p className="font-bold text-slate-700 mt-0.5">Rs. {Number(targetAccountForOpening.openingBalance || 0).toLocaleString()}</p>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 text-[10px] font-bold uppercase">Live Ledger Balance</span>
+                    <p className="font-black text-indigo-700 mt-0.5">Rs. {Number(targetAccountForOpening.currentBalance || 0).toLocaleString()}</p>
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  New Opening Balance (NPR / Rs.) <span className="text-rose-500">*</span>
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-black text-slate-500">
+                    Rs.
+                  </span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="e.g. 500000"
+                    value={openingBalanceInput}
+                    onChange={(e) => setOpeningBalanceInput(e.target.value)}
+                    required
+                    className="w-full text-sm font-black border border-slate-300 rounded-xl pl-11 pr-3 py-2.5 bg-white text-slate-900 focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+                <span className="text-[10px] text-slate-500 mt-1 block">
+                  This starting balance will be credited into the account ledger and automatically update live bank balances.
+                </span>
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowOpeningBalanceModal(false)}
+                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={openingBalanceSaving}
+                  className="px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer disabled:opacity-50 flex items-center gap-2"
+                >
+                  {openingBalanceSaving && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                  <span>{openingBalanceSaving ? 'Saving...' : 'Set Opening Balance'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* MODAL 4: ADD BANK / ACCOUNT */}
       {/* ============================================================ */}
       {showAddBankModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
@@ -3206,7 +3513,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
       )}
 
       {/* ============================================================ */}
-      {/* MODAL 4: ADD EXPENSE / PAYMENT */}
+      {/* MODAL 5: ADD EXPENSE / PAYMENT */}
       {/* ============================================================ */}
       {showExpenseModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
@@ -3250,7 +3557,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                   <option value="">Select Account...</option>
                   {bankAccounts.map(a => (
                     <option key={a.id} value={a.id}>
-                      {a.accountName} (Balance: Rs. {a.currentBalance.toLocaleString()})
+                      {a.accountName} (Balance: Rs. {Number(a.currentBalance || 0).toLocaleString()})
                     </option>
                   ))}
                 </select>
@@ -3363,7 +3670,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
       )}
 
       {/* ============================================================ */}
-      {/* MODAL 5: INTERNAL TRANSFER */}
+      {/* MODAL 6: INTERNAL TRANSFER */}
       {/* ============================================================ */}
       {showTransferModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
@@ -3405,7 +3712,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                   <option value="">Select Source Account...</option>
                   {bankAccounts.map(a => (
                     <option key={a.id} value={a.id}>
-                      {a.accountName} (Balance: Rs. {a.currentBalance.toLocaleString()})
+                      {a.accountName} (Balance: Rs. {Number(a.currentBalance || 0).toLocaleString()})
                     </option>
                   ))}
                 </select>
@@ -3424,7 +3731,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                     .filter(a => String(a.id) !== trFromAccId)
                     .map(a => (
                       <option key={a.id} value={a.id}>
-                        {a.accountName} (Balance: Rs. {a.currentBalance.toLocaleString()})
+                        {a.accountName} (Balance: Rs. {Number(a.currentBalance || 0).toLocaleString()})
                       </option>
                     ))}
                 </select>
@@ -3490,7 +3797,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
       )}
 
       {/* ============================================================ */}
-      {/* MODAL 6: RECONCILIATION VERIFICATION */}
+      {/* MODAL 7: RECONCILIATION VERIFICATION */}
       {/* ============================================================ */}
       {showReconModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
@@ -3585,7 +3892,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
       )}
 
       {/* ============================================================ */}
-      {/* MODAL 7: EDIT REVENUE */}
+      {/* MODAL 8: EDIT REVENUE */}
       {/* ============================================================ */}
       {showEditModal && editingEntry && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
@@ -3657,7 +3964,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                 </div>
                 {editAmount && !isNaN(parseFloat(editAmount)) && (
                   <p className="text-[11px] font-bold text-slate-600 mt-1">
-                    Previous: Rs. {editingEntry.amount.toLocaleString()} → New: Rs.{' '}
+                    Previous: Rs. {Number(editingEntry.amount || 0).toLocaleString()} → New: Rs.{' '}
                     {parseFloat(editAmount).toLocaleString()}
                   </p>
                 )}
@@ -3696,7 +4003,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
       )}
 
       {/* ============================================================ */}
-      {/* MODAL 8: VOID REVENUE */}
+      {/* MODAL 9: VOID REVENUE */}
       {/* ============================================================ */}
       {showVoidModal && voidingEntry && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
@@ -3713,7 +4020,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
 
             <p className="text-xs text-slate-600 leading-relaxed">
               Are you sure you want to void this revenue collection of{' '}
-              <strong className="text-slate-900">Rs. {voidingEntry.amount.toLocaleString()}</strong> from{' '}
+              <strong className="text-slate-900">Rs. {Number(voidingEntry.amount || 0).toLocaleString()}</strong> from{' '}
               <strong className="text-slate-900">{voidingEntry.revenueDate}</strong>? This entry will be marked as Voided and removed from active ledger balances.
             </p>
 
@@ -3750,7 +4057,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
       )}
 
       {/* ============================================================ */}
-      {/* MODAL 9: AUDIT HISTORY */}
+      {/* MODAL 10: AUDIT HISTORY */}
       {/* ============================================================ */}
       {showHistoryModal && historyEntry && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
@@ -3765,7 +4072,7 @@ export const Accounts: React.FC<AccountsProps> = ({ initialTab = 'dashboard', on
                     Audit Trail — Revenue #{historyEntry.id}
                   </h3>
                   <p className="text-xs text-slate-500">
-                    {historyEntry.branchName} • {historyEntry.revenueDate} • Rs. {Number(historyEntry.amount).toLocaleString()}
+                    {historyEntry.branchName} • {historyEntry.revenueDate} • Rs. {Number(historyEntry.amount || 0).toLocaleString()}
                   </p>
                 </div>
               </div>

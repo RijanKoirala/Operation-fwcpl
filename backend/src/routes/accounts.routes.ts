@@ -940,8 +940,7 @@ router.post('/revenue', authenticate, async (req: Request, res: Response) => {
           branch_id, revenue_id, description, reference_number,
           credit_amount, debit_amount, created_by, created_at, status
         ) VALUES (
-          'TX-' || LPAD(nextval('serial'::regclass)::text, 5, '0'),
-          $1, 'ONLINE_COLLECTION', $2::date,
+          'TX-TEMP', $1, 'ONLINE_COLLECTION', $2::date,
           $3, $4, $5, $6,
           $7, 0.00, $8, CURRENT_TIMESTAMP, 'Active'
         ) RETURNING id`,
@@ -955,30 +954,7 @@ router.post('/revenue', authenticate, async (req: Request, res: Response) => {
           parsedAmount,
           user.id,
         ]
-      ).catch(async () => {
-        // Fallback if sequence not bound
-        return db.query(
-          `INSERT INTO account_transactions (
-            transaction_code, account_id, transaction_type, transaction_date,
-            branch_id, revenue_id, description, reference_number,
-            credit_amount, debit_amount, created_by, created_at, status
-          ) VALUES (
-            'TX-TEMP', $1, 'ONLINE_COLLECTION', $2::date,
-            $3, $4, $5, $6,
-            $7, 0.00, $8, CURRENT_TIMESTAMP, 'Active'
-          ) RETURNING id`,
-          [
-            finalReceivedAccountId,
-            targetDateStr,
-            finalBranchId,
-            createdRecord.id,
-            `Online collection received for ${branchName} (${receivedAccountName})`,
-            revenueCode,
-            parsedAmount,
-            user.id,
-          ]
-        );
-      });
+      );
 
       if (txIns.rowCount && txIns.rowCount > 0) {
         const txId = txIns.rows[0].id;
@@ -1272,16 +1248,39 @@ router.get('/export', authenticate, async (req: Request, res: Response) => {
 router.get('/deposits/summary', authenticate, async (req: Request, res: Response) => {
   try {
     const user = req.user!;
-    if (!isSuperAdminUser(user)) {
-      return res.status(403).json({ success: false, message: 'Super Admin access required for deposits.' });
-    }
+    const isSuper = isSuperAdminUser(user);
 
     const nepalToday = getNepalTodayStr();
+    const branchFilter = req.query.branchId;
+
+    let branchWhere = '';
+    let depBranchWhere = '';
+
+    if (!isSuper) {
+      if (!user.branchId) {
+        const emptyCards = {
+          totalCashCollected: 0,
+          undepositedCash: 0,
+          totalUndepositedCash: 0,
+          depositedCash: 0,
+          totalDepositedCash: 0,
+          todayDeposits: 0,
+          undepositedCollectionsCount: 0,
+        };
+        return res.json({ success: true, summary: emptyCards, summaryCards: emptyCards });
+      }
+      branchWhere = ` AND branch_id = ${Number(user.branchId)}`;
+      depBranchWhere = ` WHERE branch_id = ${Number(user.branchId)}`;
+    } else if (branchFilter && branchFilter !== 'ALL' && branchFilter !== 'all') {
+      const bId = parseInt(String(branchFilter), 10);
+      branchWhere = ` AND branch_id = ${bId}`;
+      depBranchWhere = ` WHERE branch_id = ${bId}`;
+    }
 
     const cashRes = await db.query(`
       SELECT COALESCE(SUM(amount), 0) as total_cash_collected
       FROM branch_revenues
-      WHERE status = 'Active' AND collection_type = 'CASH'
+      WHERE status = 'Active' AND collection_type = 'CASH' ${branchWhere}
     `);
     const totalCashCollected = parseFloat(cashRes.rows[0]?.total_cash_collected || '0');
 
@@ -1290,19 +1289,34 @@ router.get('/deposits/summary', authenticate, async (req: Request, res: Response
         COALESCE(SUM(total_deposit_amount), 0) as deposited_cash,
         COALESCE(SUM(CASE WHEN deposit_date = '${nepalToday}'::date THEN total_deposit_amount ELSE 0 END), 0) as today_deposits
       FROM cash_deposits
+      ${depBranchWhere}
     `);
     const depositedCash = parseFloat(depRes.rows[0]?.deposited_cash || '0');
     const todayDeposits = parseFloat(depRes.rows[0]?.today_deposits || '0');
     const undepositedCash = Math.max(0, totalCashCollected - depositedCash);
 
+    const countRes = await db.query(`
+      SELECT COUNT(br.id) as pending_count
+      FROM branch_revenues br
+      WHERE br.status = 'Active' AND br.collection_type = 'CASH' ${branchWhere}
+        AND br.amount > COALESCE((SELECT SUM(cd.total_deposit_amount) FROM cash_deposits cd WHERE cd.revenue_id = br.id), 0)
+    `);
+    const undepositedCollectionsCount = parseInt(countRes.rows[0]?.pending_count || '0', 10);
+
+    const cards = {
+      totalCashCollected,
+      undepositedCash,
+      totalUndepositedCash: undepositedCash,
+      depositedCash,
+      totalDepositedCash: depositedCash,
+      todayDeposits,
+      undepositedCollectionsCount,
+    };
+
     return res.json({
       success: true,
-      summary: {
-        totalCashCollected,
-        undepositedCash,
-        depositedCash,
-        todayDeposits,
-      },
+      summary: cards,
+      summaryCards: cards,
     });
   } catch (err: any) {
     return res.status(500).json({ success: false, message: err.message });
@@ -1313,19 +1327,24 @@ router.get('/deposits/summary', authenticate, async (req: Request, res: Response
 router.get('/deposits/collections', authenticate, async (req: Request, res: Response) => {
   try {
     const user = req.user!;
-    if (!isSuperAdminUser(user)) {
-      return res.status(403).json({ success: false, message: 'Super Admin access required for deposits.' });
-    }
+    const isSuper = isSuperAdminUser(user);
 
-    const { status = 'all', branchId, startDate, endDate, search } = req.query;
+    const { status = 'all', branchId, startDate, endDate, search, page = '1', limit = '50' } = req.query;
 
     const whereClauses = [`br.status = 'Active'`, `br.collection_type = 'CASH'`];
     const params: any[] = [];
 
-    if (branchId && branchId !== 'ALL' && branchId !== 'all') {
+    if (!isSuper) {
+      if (!user.branchId) {
+        return res.json({ success: true, collections: [], pagination: { total: 0, page: 1, limit: 50, totalPages: 0 } });
+      }
+      params.push(user.branchId);
+      whereClauses.push(`br.branch_id = $${params.length}`);
+    } else if (branchId && branchId !== 'ALL' && branchId !== 'all') {
       params.push(parseInt(String(branchId), 10));
       whereClauses.push(`br.branch_id = $${params.length}`);
     }
+
     if (startDate) {
       params.push(String(startDate).substring(0, 10));
       whereClauses.push(`br.revenue_date >= $${params.length}::date`);
@@ -1395,13 +1414,26 @@ router.get('/deposits/collections', authenticate, async (req: Request, res: Resp
 
     // Filter by status if specified
     const filtered = items.filter(it => {
+      if (status === 'UNDEPOSITED_OR_PARTIAL') return it.depositStatus !== 'Fully Deposited';
       if (status === 'Undeposited') return it.depositStatus === 'Undeposited';
       if (status === 'Partially Deposited') return it.depositStatus === 'Partially Deposited';
       if (status === 'Fully Deposited') return it.depositStatus === 'Fully Deposited';
       return true;
     });
 
-    return res.json({ success: true, collections: filtered });
+    const pageNum = Math.max(1, parseInt(String(page), 10) || 1);
+    const limitNum = Math.max(1, parseInt(String(limit), 10) || 50);
+
+    return res.json({
+      success: true,
+      collections: filtered,
+      pagination: {
+        total: filtered.length,
+        page: pageNum,
+        limit: limitNum,
+        totalPages: Math.ceil(filtered.length / limitNum) || 1,
+      },
+    });
   } catch (err: any) {
     return res.status(500).json({ success: false, message: err.message });
   }
@@ -1411,16 +1443,20 @@ router.get('/deposits/collections', authenticate, async (req: Request, res: Resp
 router.get('/deposits/history', authenticate, async (req: Request, res: Response) => {
   try {
     const user = req.user!;
-    if (!isSuperAdminUser(user)) {
-      return res.status(403).json({ success: false, message: 'Super Admin access required for deposits.' });
-    }
+    const isSuper = isSuperAdminUser(user);
 
     const { branchId, startDate, endDate, limit = '50' } = req.query;
 
     const whereClauses = [];
     const params: any[] = [];
 
-    if (branchId && branchId !== 'ALL' && branchId !== 'all') {
+    if (!isSuper) {
+      if (!user.branchId) {
+        return res.json({ success: true, deposits: [] });
+      }
+      params.push(user.branchId);
+      whereClauses.push(`cd.branch_id = $${params.length}`);
+    } else if (branchId && branchId !== 'ALL' && branchId !== 'all') {
       params.push(parseInt(String(branchId), 10));
       whereClauses.push(`cd.branch_id = $${params.length}`);
     }
@@ -1493,9 +1529,7 @@ router.get('/deposits/history', authenticate, async (req: Request, res: Response
 router.post('/deposits', authenticate, async (req: Request, res: Response) => {
   try {
     const user = req.user!;
-    if (!isSuperAdminUser(user)) {
-      return res.status(403).json({ success: false, message: 'Super Admin access required to deposit cash.' });
-    }
+    const isSuper = isSuperAdminUser(user);
 
     const { revenueId, depositDate, remarks, allocations } = req.body;
 
@@ -1508,6 +1542,17 @@ router.post('/deposits', authenticate, async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: 'Collection record not found.' });
     }
     const rev = revRes.rows[0];
+
+    // RBAC: Super Admin OR user assigned to the branch of this collection
+    if (!isSuper) {
+      if (!user.branchId || Number(user.branchId) !== Number(rev.branch_id)) {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden: You can only deposit cash for your assigned branch.',
+        });
+      }
+    }
+
     if (rev.status !== 'Active') {
       return res.status(400).json({ success: false, message: 'Cannot deposit on a voided revenue record.' });
     }
@@ -1672,7 +1717,7 @@ router.post('/deposits', authenticate, async (req: Request, res: Response) => {
 router.get('/banks/active', authenticate, async (_req: Request, res: Response) => {
   try {
     const result = await db.query(
-      `SELECT id, account_name, account_type FROM accounts WHERE is_active = TRUE ORDER BY account_type, account_name`
+      `SELECT id, account_name, account_name as "accountName", account_type, account_type as "accountType" FROM accounts WHERE is_active = TRUE ORDER BY account_type, account_name`
     );
     return res.json({ success: true, accounts: result.rows });
   } catch (err: any) {

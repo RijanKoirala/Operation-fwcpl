@@ -339,6 +339,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
               const visibleSubItems = (item as any).subItems?.filter((sub: any) => {
                 if (isSuperAdminRole) return true;
+                if (item.path === 'accounts') {
+                  if (sub.path === 'accounts/deposits') {
+                    return hasPermission('accounts.deposits.view') || hasPermission('accounts.revenue.view') || hasPermission('accounts');
+                  }
+                  if (sub.path === 'accounts/revenue') {
+                    return hasPermission('accounts.revenue.view') || hasPermission('accounts');
+                  }
+                }
                 if (sub.permissionKey && !hasPermission(sub.permissionKey)) {
                   return false;
                 }
